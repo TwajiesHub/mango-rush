@@ -183,7 +183,22 @@ All skill points go into the pot. Each skill has a pop-up name the first time an
 - **Never:** rigged near misses, losses dressed up as wins, pay-to-continue, pressure timers or guilt streaks,
   anything that pushes chasing losses.
 
+### 5. Coconut types (unpredictable, never unfair)
+Every type has its own **tell** (ring look + whistle) and its landing spot is **locked at least 0.35 s before impact**.
+| Type | Behaviour | Tell | From |
+| --- | --- | --- | --- |
+| Normal | as today | red dot ring + cross | start |
+| Slow | hangs and wobbles, warning ~1.6 s | ring closes slowly, low whistle | golden hour |
+| Fast | quick drop, warning ~0.45 s | small tight ring pulsing fast, high whistle | dusk |
+| Drifter | wind slides the landing spot up to 1.5 units during the fall, then it locks | the ring visibly slides | dusk |
+| Late-lock | the ring follows the player loosely, locks 0.4 s before impact (made for dash + Perfect dodge) | pulsing inner dot that snaps solid on lock | night |
+- **Shuffle bag:** coconut types are dealt from a shuffled bag (Tetris-style) built from the current phase's mix, so
+  variety is guaranteed and clumps (5 fast in a row) can't happen. Uses the run's rng (Daily Run identical for all).
+- **Mercy window:** for 1.5 s after a hit, no coconut targets the spot the player is standing on.
+- **Introduction:** each type's first appearance in a run comes alone (no other coconut within 2 s).
+- Later (v1.1): Fake-out (ring pauses at 70%), Bouncer (lands, bounces once to a second ring).
+
 ## Not doing (v1)
 Live multiplayer, revives/continues, cosmetics that change the start.ng look, extra hidden bonuses.
 **Version 1.1:** per-run missions, monkey raid event, extra skills (Thread the needle, Golden swoop, Dive, Coconut kick),
-cracked planks. (The push-your-luck idea is now in version 1 as the pot.)
+cracked planks, Fake-out and Bouncer coconuts. (The push-your-luck idea is now in version 1 as the pot.)

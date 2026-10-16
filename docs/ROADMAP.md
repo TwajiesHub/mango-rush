@@ -8,9 +8,9 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
 | 0 | Setup (owner) | clone, `v1` branch, kit copied in, beta repo + remote | done |
 | 1 | Foundation | v1 structure in place; v0 gameplay ported into the modules; scoring/rng/store done; plain screens | done |
 | 2 | Barge and camera | barge deck replaces the island; tilted camera with horizon, sky, sun, water; short-screen fixes | done |
-| 3 | Movement feel | smooth direction, weight, skid, steerable dash + snap turn, lean, knees/elbows, trailing hair/scarf, look-ahead camera, slippery-surface hook, footsteps, `?debug` tuning panel | **CURRENT** |
-| 4 | The look | cel shading, outlines, paper grain, blob shadows; character print pattern + reactions | — |
-| 5 | The rules | sawtooth difficulty, early win, all items, near miss, perfect dodge, **the pot + bank spots**, skills (Swoop, Chain, Slam bank), juice splats, golden plank, rings closing in | — |
+| 3 | Movement feel | smooth direction, weight, skid, steerable dash + snap turn, lean, knees/elbows, trailing hair/scarf, look-ahead camera, slippery-surface hook, footsteps, `?debug` tuning panel; 3b: dash button, 60 fps frame pacing, quality manager | done |
+| 4 | The look | cel shading, outlines, paper grain, item models, dot-ring warnings, character print pattern + reactions, Archivo name tag | **CURRENT** |
+| 5 | The rules | sawtooth difficulty, early win, all items, **coconut types (slow, fast, drifter, late-lock) + shuffle bag + mercy window**, near miss, perfect dodge, **the pot + bank spots**, skills (Swoop, Chain, Slam bank), juice splats, golden plank, rings closing in | — |
 | 6 | The journey | six depth layers, places + banners, golden hour → dusk → night lighting, wet edges | — |
 | 7 | Happenings | showers, bridge, gust, fruit bat, volleys, The Big One | — |
 | 8 | Adrenaline + feel | heartbeat, Madness, best chase, bank/skill effects, living planks, freezes, shake, squash, particles, pop-ups | — |
