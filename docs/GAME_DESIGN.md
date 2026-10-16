@@ -89,7 +89,7 @@ Warning rings **close in** toward the centre; impact happens when the ring reach
 | Heartbeat mode | last life | music muffles, heartbeat, screen edges pulse, colours drain except warning rings; points ×1.5 |
 | Perfect dodge | see above | 0.3 s slow motion, bonus, dash recharge |
 | Mango Madness | hold ×5 long enough to fill the fever meter | 8 s mango storm: double points, full music, camera pushes in, gold glow; each catch +0.3 s |
-| Water over the deck | from dusk | water washes over the deck edges; safe area shrinks to ~55% by midnight |
+| Wet edges | from dusk | water washes over the outer planks: they turn **slippery** (never off-limits); the wet band widens until midnight (see Decisions) |
 | Live best chase | once a best exists | HUD line "+1,240 ahead of best"; passing it fires a mid-run "NEW BEST" |
 | Adaptive music | phase, events, last life | layers build per phase; silence beat before events; heartbeat on last life |
 
@@ -135,6 +135,55 @@ Web Share on phones, download + copied text on desktop.
 Shake fades smoothly (never per-frame random jitter); squash preserves volume; HUD and particles keep moving during
 freezes; reduced motion removes shake, flashes and slow motion.
 
+## Decisions after the first beta (16 Oct): these override anything above that disagrees
+
+### 1. The pot (cash out)
+- While a combo is running (multiplier above ×1, or any catch since the last bank), every point earned (catches, near
+  misses, skill bonuses) goes into the **pot**, not the score. The HUD shows the banked score and, under it, a saffron
+  chip "+3,200 IN THE POT".
+- **Bank it:** walk or dash into a **bank spot** (see below) → the pot is added to the score with a big count-up,
+  burst and sound; the multiplier goes back to ×1. The choice: cash in safely or push for ×5.
+- **Combo runs out naturally** (the timer drains it all the way down to ×1) → the pot banks automatically.
+- **Coconut hit** → the **whole pot is lost** ("−3,200" shatter), multiplier ×1, −1 life. The calabash shield also
+  protects the pot.
+- Banked score never goes down. At game over an unbanked pot is lost and shown plainly ("Lost in the pot: 2,400") —
+  no guilt text, no "win it back".
+- **Bank spots:** two, on the deck in front of the two mango crates at the far corners, inside the walkable area,
+  marked by a glowing saffron dot ring (~1.1 units radius). Drops can land on them. No new button.
+
+### 2. Skills (dash + move), lite set for version 1
+| Skill | How | Reward |
+| --- | --- | --- |
+| Swoop | catch a mango while dashing | +50% points for that catch |
+| Chain | a Swoop refills the dash instantly | chain dashes across lines of mangoes ("CHAIN ×4") |
+| Perfect dodge | dash out of a coconut ring in its final 0.2 s | +150, brief slow motion, dash refills |
+| Slam bank | dash (not walk) into a bank spot | +10% on the pot being banked |
+All skill points go into the pot. Each skill has a pop-up name the first time and every time.
+- **Dash steering stays on:** the dash can be steered (carved left/right) during the burst. Never lock its direction.
+- **Snap turn:** a sharp turn (> 60°) within 0.12 s after a dash ends keeps a short speed boost (×1.25 for 0.25 s).
+
+### 3. The planks
+- **Juice splats:** a missed mango that rots leaves a slippery juice patch on its spot for ~10 s (you slide; a dash
+  across it goes further and is harder to stop).
+- **Golden plank:** one plank glows gold; catches made while standing on it pay ×2 into the pot. It moves to a new
+  plank every ~15 s (positions from the run's rng so the Daily Run is the same for everyone).
+- **Wet edges:** from dusk the outer planks are wet and slippery (replaces "safe area shrinks").
+- **Living planks (look only):** planks bounce on coconut impacts, puff dust under dashes, creak under footsteps, glow
+  faintly to the beat at night.
+
+### 4. Pacing and honest hooks
+- **Sawtooth difficulty:** pressure rises in waves of 20–30 s, peaks (often with a happening), then a 4–5 s breather
+  (fewer coconuts, a golden mango). The overall trend still rises. It is a fixed timeline (fair for the leaderboard
+  and the Daily Run).
+- **Quick early win:** the first 20 s are generous and a golden mango is guaranteed early in every run.
+- **Record near misses:** in-game "28,850 to beat your best"; at game over, if close, "Only 340 short of your best".
+- **Your rival:** "Tunde has 12,400 · 1 place above you" from the start.ng leaderboard.
+- **Loud wins, gentle losses:** big feedback for catches, banks and skills; game over is soft, quick and one key from
+  Play again.
+- **Never:** rigged near misses, losses dressed up as wins, pay-to-continue, pressure timers or guilt streaks,
+  anything that pushes chasing losses.
+
 ## Not doing (v1)
 Live multiplayer, revives/continues, cosmetics that change the start.ng look, extra hidden bonuses.
-**Version 1.1:** per-run missions, monkey raid event, basket push-your-luck experiment.
+**Version 1.1:** per-run missions, monkey raid event, extra skills (Thread the needle, Golden swoop, Dive, Coconut kick),
+cracked planks. (The push-your-luck idea is now in version 1 as the pot.)
