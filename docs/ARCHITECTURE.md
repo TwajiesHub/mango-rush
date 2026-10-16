@@ -1,7 +1,8 @@
 # Mango Rush — Architecture (version 1)
 
-The planned structure lives in `docs/skeleton/` until step 1 moves it into place. Every module's header comment is
-its **contract**: what it exports, what it may import, which events it emits/hears, which state it owns.
+The code at the repo root is the source of truth (`docs/skeleton/` is the pre-step-1 plan, kept as history). Every
+module's header comment is its **contract**: what it exports, what it may import, which events it emits/hears, which
+state it owns.
 
 ## File map
 ```
@@ -18,6 +19,7 @@ js/core/config.js       every tuning number + difficultyAt(t), phaseAt(t)
 js/core/rng.js          Mulberry32 createRng(seed), dailySeed(date) (FNV-1a of UTC YYYY-MM-DD), dailyLabel, randomSeed
 js/core/store.js        localStorage per user (try/catch everywhere): progress, recordRun, settings
 js/core/input.js        keyboard + floating joystick + dash + pause
+js/core/motion.js       tested maths: spring, acceleration, input smoothing, throws, swept collision, fixed-step clock
 js/world/renderer.js    renderer, tilted camera rig (menu/play/over), quality manager, portrait render
 js/world/materials.js   cel (toon) materials, outlines, paper grain texture
 js/world/character.js   the start.ng character (all style options, print pattern, reactions)
@@ -35,6 +37,7 @@ js/ui/sharecard.js      1200×630 share image + Web Share / download
 js/ui/wordmark.js       the MANGO RUSH wordmark SVG (done)
 js/content/text.js      every word the player reads (+ fill() and pickLine())
 assets/music/loop.mp3   the afrobeat loop (owner supplies; game must work without it)
+tests/motion.test.mjs   42 checks for js/core/motion.js — `node tests/motion.test.mjs`
 ```
 
 ## How modules talk
@@ -58,3 +61,14 @@ assets/music/loop.mp3   the afrobeat loop (owner supplies; game must work withou
 ## Testing locally
 - `python -m http.server 8000` in the repo root, open http://localhost:8000.
 - The game must boot with no console errors as a guest, play a full run, reach game over, and restart.
+
+## Contract changes made in step 1 (already in the code headers)
+- `input.js`: `initInput` takes optional `canPlay` / `onJoystick`; `readInput()` returns `{ x, z, dash }` (dash is
+  consumed once); `queueDash()` for the Dash button. Mouse never creates a joystick (touch and pen do).
+- `player.js`: `idlePlayer()` for the menu and game-over poses.
+- `drops.js`: `clearDrops()` (back to menu) and `getDropLog()` (debug log of the first drops).
+- `scoring.js`: `scoringSelfTest()`; `nextMedal.name` is the medal id.
+- `screens.js`: `showGameOver` also takes `dailyLabel`.
+- `config.js`: a `drops` section for numbers that were hard-coded in version 0.
+- Daily Run: every drop draws exactly six rng values in a fixed order (gap, type, angle, radius, aim, volley), on
+  its own schedule clock, so frame rate and pauses don't change the sequence.

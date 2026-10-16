@@ -5,18 +5,19 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
 
 | Step | Name | What it delivers | Status |
 | --- | --- | --- | --- |
-| 0 | Setup (owner) | clone, `v1` branch, kit copied in, beta repo + remote | todo |
-| 1 | Foundation | v1 structure in place; v0 gameplay ported into the modules; scoring/rng/store done; plain screens | **CURRENT** |
-| 2 | Barge and camera | barge deck replaces the island; tilted camera with horizon, sky, sun, water | — |
-| 3 | The look | cel shading, outlines, paper grain, blob shadows; character print pattern + reactions | — |
-| 4 | The rules | difficulty table, all items (golden, rotten, shield), near miss, perfect dodge, warning rings closing in | — |
-| 5 | The journey | six depth layers, places + banners, golden hour → dusk → night lighting, water over the deck | — |
-| 6 | Happenings | showers, bridge, gust, fruit bat, volleys, The Big One | — |
-| 7 | Adrenaline + feel | heartbeat, Madness, best chase, freezes, shake, squash, particles, pop-ups | — |
-| 8 | The screens | start, HUD, pause, game over, leaderboard, share card — matched to the mockups | — |
-| 9 | Sound | afrobeat loop (adaptive) + all sound effects | — |
-| 10 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | — |
-| 11 | Release | merge `v1` into `main` → mango-rush.start.ng becomes version 1 | — |
+| 0 | Setup (owner) | clone, `v1` branch, kit copied in, beta repo + remote | done |
+| 1 | Foundation | v1 structure in place; v0 gameplay ported into the modules; scoring/rng/store done; plain screens | done |
+| 2 | Barge and camera | barge deck replaces the island; tilted camera with horizon, sky, sun, water; short-screen fixes | **CURRENT** |
+| 3 | Movement feel | smooth direction, weight, skid, lean, bending limbs, trailing hair/scarf, springy camera, footsteps, `?debug` tuning sliders (uses `js/core/motion.js`) | — |
+| 4 | The look | cel shading, outlines, paper grain, blob shadows; character print pattern + reactions | — |
+| 5 | The rules | difficulty table, all items (golden, rotten, shield), near miss, perfect dodge, warning rings closing in | — |
+| 6 | The journey | six depth layers, places + banners, golden hour → dusk → night lighting, water over the deck | — |
+| 7 | Happenings | showers, bridge, gust, fruit bat, volleys, The Big One | — |
+| 8 | Adrenaline + feel | heartbeat, Madness, best chase, freezes, shake, squash, particles, pop-ups | — |
+| 9 | The screens | start, HUD, pause, game over, leaderboard, share card — matched to the mockups | — |
+| 10 | Sound | afrobeat loop (adaptive) + all sound effects | — |
+| 11 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | — |
+| 12 | Release | merge `v1` into `main` (without `docs/`, `tests/`) → mango-rush.start.ng becomes version 1 | — |
 
 ## Step 0 — owner setup (no Claude Code needed)
 1. Clone the live repo and make the work branch:

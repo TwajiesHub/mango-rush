@@ -17,8 +17,11 @@ chat) designed the game with him and steers the build by writing the files in `d
 - `main` branch = the LIVE game at https://mango-rush.start.ng (version 0, a simpler island game).
   start.ng redeploys automatically on every push to `main`.
 - `v1` branch = where you work. **Never commit to or push `main`.** Never merge into `main` unless a step brief says so.
-- `docs/skeleton/` = the planned version 1 file structure with each module's contract written in its header
-  comment. Step 1 moves it into place.
+- The code at the repo root is the source of truth; each module's contract is its header comment.
+  `docs/skeleton/` is the original plan from before step 1 (history only; don't edit it or copy from it).
+- `tests/` = Node test files for pure-logic modules (plain `node`, no packages). Run `node tests/motion.test.mjs`
+  before committing any step; it must print `0 failed`.
+- `screenshots/` = your test screenshots for the report. Never commit it (it's in `.gitignore`).
 - The beta is a second repo, `TwajiesHub/mango-rush-beta` (git remote `beta`), live at
   https://mango-rush-beta.start.ng. The owner pushes there with `git push beta v1:main` after checking a step.
 
@@ -52,6 +55,7 @@ chat) designed the game with him and steers the build by writing the files in `d
    - Run a local server from the repo root and check the browser console has no errors.
    - Locally there is no start.ng sign-in (the connect page only answers on *.start.ng), so the game must fall back
      to the guest look within ~4 s and still be fully playable.
+   - Run `node tests/motion.test.mjs`.
    - Go through the step's "Done when" checklist item by item.
 5. Commit on `v1`.
 6. Write the report described at the end of the step brief (what you built, what you could not do, anything the
