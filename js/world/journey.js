@@ -22,7 +22,7 @@
 // Draw order (renderOrder, no depth test): barge water streaks, sky, sun, sun reflections, far bank. Everything here
 // is OPAQUE (the sun uses alpha test): three draws transparent things after all opaque ones, which would paint them over
 // the deck and the character.
-// Light: a warm hemisphere light plus a low sun from behind-left. No shadow maps (blob shadows come from materials.js).
+// Light: a warm key light and a little ambient (see buildJourney). No shadow maps (blob shadows come from materials.js).
 
 import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
@@ -238,9 +238,12 @@ export function buildJourney(scene) {
   rig.add(farBank);
 
   // light: warm hemisphere + a low sun from behind-left, no shadow maps
-  scene.add(new THREE.HemisphereLight('#ffd9b0', '#7a4a3a', 1.5));
-  const sun = new THREE.DirectionalLight('#ffc48a', 1.8);
-  sun.position.set(-12, 7, -14);
+  // Cel shading: the toon gradient (materials.js) makes the shadow tone, so the light is ONE warm key from the camera side, up and to the
+  // left (so the faces the player sees are lit and read as the paint colours, with a warm shadow on the far sides), and only a little
+  // ambient. Intensities are in three's physical units: a directional light of PI lights a surface to exactly its colour.
+  scene.add(new THREE.HemisphereLight('#ffe6c4', '#9a6a4a', 0.35));
+  const sun = new THREE.DirectionalLight('#fff0d8', Math.PI * 0.95);
+  sun.position.set(-6, 11, 8);
   scene.add(sun);
 }
 

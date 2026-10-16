@@ -10,6 +10,7 @@
 //   getRenderer() / getCameraDebug()          for ?debug measurements
 //   getGpuInfo() -> { renderer, intel }       the GPU's own name (WEBGL_debug_renderer_info; empty if the browser hides it)
 //   getQualityInfo() -> { antialias, pixelRatio, level, levels, particleScale }
+//   warmUp() -> void                          compile every material now (during loading) so nothing compiles mid-run
 //   reportFrame(intervalMs, nowMs)            main.js calls it after every rendered frame: the QUALITY MANAGER (see below)
 //
 // PLAY CAMERA. A normal tilted camera (no lens shift) that looks at the deck from CONFIG.camera.elevationDeg. On every
@@ -40,6 +41,7 @@ import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { springStep } from '../core/motion.js';
 import { cameraShake, setParticleScale } from '../fx/juice.js';
+import { setGrainPixelRatio } from './materials.js';
 import { deckBounds, deckSize } from './barge.js';
 import { syncBackdrop } from './journey.js';
 
@@ -140,6 +142,7 @@ function applyLevel(n, now) {
   ctx.renderer.setPixelRatio(pixelRatio);
   ctx.renderer.setSize(innerWidth, innerHeight, false);
   setParticleScale(levels[n].particles);
+  setGrainPixelRatio(pixelRatio);   // the paper grain keeps its size ON SCREEN at every quality level
   Q.winStart = now;
   Q.winSum = Q.winN = 0;
   Q.okFor = 0;
@@ -192,8 +195,8 @@ export function initRenderer(canvas) {
   buildLevels();
   pixelRatio = levels[0].pr;
   renderer.setPixelRatio(pixelRatio);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  setGrainPixelRatio(pixelRatio);
+  renderer.toneMapping = THREE.NoToneMapping;   // the poster palette is exact: a colour on screen is the colour in the code
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.localClippingEnabled = true;   // the backdrop is clipped at the horizon line
   renderer.setClearColor('#1FA39A');   // the water (see journey.js): below the horizon there is nothing else to draw
@@ -214,6 +217,22 @@ export function initRenderer(canvas) {
 
   ctx = { scene, camera, renderer };
   return ctx;
+}
+
+// SHADER WARM-UP. A shader is compiled and linked the first time something uses it, and on an Intel UHD 620 that can freeze the picture
+// for 100 ms or more mid-run (the first golden mango, the first rotten mango or new ring). main.js calls this during LOADING, after
+// everything is built: renderer.compile() builds the programs of EVERY material in the scene (the pools hold one of each item, ring,
+// outline and the character), then one throwaway frame with the pooled (hidden) meshes shown makes the driver really link them now.
+export function warmUp() {
+  const { renderer, scene, camera } = ctx;
+  const before = renderer.info.programs ? renderer.info.programs.length : 0;
+  try { renderer.compile(scene, camera); } catch { /* the first frame will compile instead */ }
+  const hidden = [];
+  scene.traverse((o) => { if (!o.visible && (o.isMesh || o.isSprite)) hidden.push(o); });
+  for (const o of hidden) o.visible = true;
+  try { renderer.render(scene, camera); } catch { /* ignore */ }
+  for (const o of hidden) o.visible = false;
+  if (DEBUG) console.log(`[renderer] shader warm-up: ${before} -> ${renderer.info.programs.length} programs`);
 }
 
 export function setCameraMode(m) {

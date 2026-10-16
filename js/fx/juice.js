@@ -110,7 +110,7 @@ export function initJuice(opts) {
   popupRoot = opts.popupRoot;
 
   const geo = new THREE.IcosahedronGeometry(0.07, 0);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   mesh = new THREE.InstancedMesh(geo, mat, MAX_PARTICLES);
   mesh.frustumCulled = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

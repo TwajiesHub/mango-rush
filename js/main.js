@@ -11,12 +11,12 @@ import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
 import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
-import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
+import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, warmUp, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
 import { createFrameClock } from './core/frameclock.js';
 import { buildBarge, updateBarge, deckRoot, setOrientation } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney } from './world/journey.js';
-import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer } from './play/player.js';
-import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog } from './play/drops.js';
+import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose } from './play/player.js';
+import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, forceDrop } from './play/drops.js';
 import { resetHappenings, updateHappenings } from './play/happenings.js';
 import { resetScoring, updateScoring, endRun, scoringSelfTest } from './play/scoring.js';
 import { initJuice, timeScale, updateJuice, setPlayerObject } from './fx/juice.js';
@@ -76,11 +76,14 @@ async function boot() {
   initDrops(deckRoot());
 
   await loadPlayer();
+  warmUp();   // compile every shader now, behind the loading screen
   requestAnimationFrame(frame);
   toMenu();
 }
 
 async function loadPlayer() {
+  // the name tag is drawn with Archivo 800: wait (briefly) for the font before building the character
+  try { await Promise.race([document.fonts.load('800 52px Archivo'), new Promise((r) => setTimeout(r, 1500))]); } catch { /* the tag redraws itself later */ }
   const info = await fetchStartngPlayer();
   playerKey = styleKey(info);
   state.player = info;
@@ -181,6 +184,7 @@ on(EVENTS.RUN_END, (summary) => {
   lastSummary = summary;
   setScreen('over');
   showHud(false);   // the game over card sits on the dimmed scene, without the HUD
+  setOverPose(summary.isBest);
   setCameraMode('over');
   showTouchControls(false);
   showGameOver(summary, { player: state.player, portraitUrl, dailyLabel: dailyLabel() });
@@ -230,8 +234,10 @@ addEventListener('resize', () => { if (state.screen === 'start' || state.screen 
 // ---------------------------------------------------------------- loop
 // Every requestAnimationFrame callback asks the clock whether to render: on a fast screen with a weak GPU it skips alternate
 // callbacks so the pictures arrive at an even 60 fps, and it hands over a steady dt (a short moving average of real steps).
+let loopFrozen = false;   // ?debug: lets a test drive the modules by hand without the loop interfering
 function frame(ts) {
   requestAnimationFrame(frame);
+  if (loopFrozen) return;
   const tick = clock.tick(ts);
   if (!tick.render) return;
   const realDt = tick.dt;
@@ -260,6 +266,32 @@ function frame(ts) {
   reportFrame(tick.intervalMs, ts);   // the quality manager (pixel ratio, particles)
 }
 
+// ?debug: render a busy play scene (14 live drops) N times and time each frame INCLUDING the wait for the GPU (a 1-pixel readback
+// forces it to finish). Run it while a run is on. Returns ms per frame (avg / p95 / worst) and the draw calls.
+function benchBusyScene(pr = 1.5, frames = 90) {
+  const rr = getRenderer();
+  const gl = rr.getContext();
+  const px = new Uint8Array(4);
+  for (let i = 0; i < 14; i++) forceDrop(i % 3 === 0 ? 'coconut' : (i % 5 === 0 ? 'golden' : 'mango'), (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 8, 30);
+  setFollowTarget(getPlayer().object);
+  rr.setPixelRatio(pr);
+  rr.setSize(innerWidth, innerHeight, false);
+  for (let i = 0; i < 25; i++) renderFrame(0.016);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const ts = [];
+  let cpu = 0;
+  for (let i = 0; i < frames; i++) {
+    const t0 = performance.now();
+    renderFrame(0.016);
+    cpu += performance.now() - t0;
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    ts.push(performance.now() - t0);
+  }
+  ts.sort((a, b) => a - b);
+  const f = (v) => +v.toFixed(2);
+  return { pixelRatio: pr, buffer: [rr.domElement.width, rr.domElement.height], avgMs: f(ts.reduce((s, x) => s + x, 0) / ts.length), p95Ms: f(ts[Math.floor(ts.length * 0.95)]), worstMs: f(ts[ts.length - 1]), cpuMs: f(cpu / frames), drawCalls: rr.info.render.calls };
+}
+
 // numbers for the ?debug panel
 function getPerf() {
   const s = clock.stats();
@@ -279,6 +311,9 @@ if (location.search.includes('debug')) {
     scene: getScene,
     camera: getCameraDebug,
     perf: getPerf,
+    bench: benchBusyScene,
+    freeze: (on = true) => { loopFrozen = !!on; return loopFrozen; },
+    lineup: async (spec) => { loopFrozen = true; const m = await import('./ui/lineup.js'); return m.lineup(spec); },
     end() { if (state.screen === 'play') endRun('debug'); },
     dropLog: getDropLog,
     bot: {

@@ -4,6 +4,7 @@
 //   initPlayer(parent) ; setCharacter(info) ; resetPlayer() ; updatePlayer(dt, input)
 //     parent = barge.deckRoot(): the player moves with the deck. Coordinates are deck-local.
 //   getPlayer() -> { object, x, z, invulnerable, dashing }   the SAME object every call
+//   setOverPose(isBest) -> void   the held game-over pose: a slump, or a cheer after a new best (reset when a run starts)
 //   idlePlayer(realDt, screen) -> void   main.js calls it when no run is being played (start screen: the character turns
 //     slowly; game over: stands idle)
 //
@@ -30,7 +31,7 @@ import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on, emit } from '../core/events.js';
 import { smoothInput, accelerateVelocity } from '../core/motion.js';
-import { buildCharacter, updateCharacterMotion, animateCharacter, disposeCharacter } from '../world/character.js';
+import { buildCharacter, updateCharacterMotion, animateCharacter, disposeCharacter, triggerReaction, setCharacterPose } from '../world/character.js';
 import { deckBounds, surfaceAt } from '../world/barge.js';
 import { blobShadow } from '../world/materials.js';
 import { menuStand } from '../world/renderer.js';
@@ -81,7 +82,12 @@ export function initPlayer(s) {
   blob = blobShadow(0.62, 0.55);
   blob.position.y = 0.02;
   scene.add(blob);
-  on(EVENTS.HIT, () => { invuln = CONFIG.player.invulnerable; });
+  on(EVENTS.HIT, (e) => {
+    invuln = CONFIG.player.invulnerable;
+    if (model && !e.shielded) triggerReaction(model, 'hit');          // a stumble backwards
+  });
+  on(EVENTS.CATCH, (e) => { if (model && e.points > 0) triggerReaction(model, 'catch'); });   // a hop with arms up
+  on(EVENTS.BEST_PASSED, () => { if (model) triggerReaction(model, 'cheer'); });              // both arms up
 }
 
 export function setCharacter(info) {
@@ -105,7 +111,7 @@ export function resetPlayer() {
   state.dashReadyFrac = 1;
   camMotion.vx = camMotion.vz = 0;
   camMotion.dashing = false;
-  if (model) { model.visible = true; model.position.set(0, 0, 0); model.rotation.y = 0; model.scale.set(1, 1, 1); }
+  if (model) { model.visible = true; model.position.set(0, 0, 0); model.rotation.y = 0; model.scale.set(1, 1, 1); setCharacterPose(model, null); }
   syncView();
 }
 
@@ -283,10 +289,18 @@ export function updatePlayer(dt, input) {
   syncView();
 }
 
+// the game-over pose, held on the game-over screen: a slump, or a cheer after a new best
+export function setOverPose(isBest) {
+  if (model) setCharacterPose(model, isBest ? 'cheer' : 'slump');
+}
+
+let waveIn = 2;
 export function idlePlayer(realDt, screen) {
   if (!model) return;
   idleTime += realDt;
   if (screen === 'start') {
+    waveIn -= realDt;   // the start screen: the idle pose with a small wave every few seconds
+    if (waveIn <= 0) { waveIn = 4.5 + Math.random() * 2; triggerReaction(model, 'wave'); }
     const stand = menuStand();
     x = stand.x;
     z = stand.z;

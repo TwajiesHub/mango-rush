@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
-import { flat, blobShadow, mergeFlatProps } from './materials.js';
+import { flat, toon, outline, blobShadow, mergeToonProps } from './materials.js';
 
 const D = CONFIG.deck;
 const DEG = Math.PI / 180;
@@ -114,6 +114,19 @@ function woodTexture(w, d) {
   // seams: long ones between the planks, short butt joints staggered plank by plank
   g.fillStyle = COLORS.seam;
   for (let i = 0; i <= n; i++) g.fillRect(i * plank - 2, 0, 4, c.height);
+  // a soft darker shade along the long seams (painted into the texture, so it costs nothing)
+  for (let i = 0; i <= n; i++) {
+    for (const dir of [-1, 1]) {
+      const x0 = i * plank + dir * 2;
+      const grad = g.createLinearGradient(x0, 0, x0 + dir * 9, 0);
+      grad.addColorStop(0, 'rgba(60,30,8,0.22)');
+      grad.addColorStop(1, 'rgba(60,30,8,0)');
+      g.fillStyle = grad;
+      g.fillRect(dir > 0 ? x0 : x0 - 9, 0, 9, c.height);
+    }
+  }
+  g.fillStyle = COLORS.seam;
+  for (let i = 0; i <= n; i++) g.fillRect(i * plank - 2, 0, 4, c.height);
   const butt = 4.5 * ppu;
   for (let i = 0; i < n; i++) {
     for (let y = ((i * 1.7) % 4.5) * ppu; y < c.height; y += butt) g.fillRect(i * plank, y - 2, plank, 4);
@@ -124,8 +137,8 @@ function woodTexture(w, d) {
   return tex;
 }
 
-function box(parent, w, h, d, color, x, y, z) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), flat(color));
+function box(parent, w, h, d, color, x, y, z, unlit = false) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), unlit ? flat(color) : toon(color));
   m.position.set(x, y, z);
   parent.add(m);
   return m;
@@ -169,7 +182,9 @@ function buildArt() {
     { depth: D.rimHeight, bevelEnabled: false },
   );
   rimGeo.rotateX(-Math.PI / 2);
-  art.add(new THREE.Mesh(rimGeo, [flat(COLORS.rim), flat(COLORS.hull)]));
+  const rimMesh = new THREE.Mesh(rimGeo, [flat(COLORS.rim), flat(COLORS.hull)]);
+  outline(rimMesh, 0.03);   // the rim edge gets the soft umber outline too
+  art.add(rimMesh);
 
   // hull: sides going down into the water
   const hullGeo = new THREE.ExtrudeGeometry(chamferShape(w, d, D.chamfer), { depth: D.hull, bevelEnabled: false });
@@ -185,7 +200,7 @@ function buildArt() {
     box(crate, 1.5, 0.85, 1.2, COLORS.crate, 0, 0.425, 0);
     if (side === -1) {
       box(crate, 1.3, 0.04, 1.0, COLORS.crateInside, 0, 0.86, 0);
-      const mango = flat(COLORS.mango);
+      const mango = toon(COLORS.mango);
       const geo = new THREE.SphereGeometry(0.27, 12, 9);
       for (const [x, y, z] of [[-0.3, 1.0, -0.15], [0.25, 1.0, -0.1], [0, 1.0, 0.28], [-0.05, 1.28, 0.02]]) {
         const m = new THREE.Mesh(geo, mango);
@@ -210,7 +225,7 @@ function buildArt() {
       post.position.set(sx * (hw - 0.42), 0, sz * (hd - 0.42));
       box(post, 0.14, 1.9, 0.14, COLORS.post, 0, 0.95, 0);
       box(post, 0.4, 0.46, 0.4, COLORS.lamp, 0, 2.05, 0);
-      const glass = box(post, 0.3, 0.32, 0.42, COLORS.lampGlass, 0, 2.05, 0);
+      const glass = box(post, 0.3, 0.32, 0.42, COLORS.lampGlass, 0, 2.05, 0, true);   // unlit: step 6 makes it glow
       glass.name = 'lantern-glass';
       glass.userData.keep = true;
       box(post, 0.46, 0.07, 0.46, COLORS.post, 0, 2.32, 0);
@@ -222,7 +237,7 @@ function buildArt() {
   // a rope coil near one front corner
   const coil = new THREE.Group();
   coil.position.set(hw - 1.3, 0, hd - 0.9);
-  const ropeMat = flat(COLORS.rope);
+  const ropeMat = toon(COLORS.rope);
   for (const [r, y] of [[0.46, 0.07], [0.32, 0.17]]) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.085, 6, 20), ropeMat);
     ring.rotation.x = Math.PI / 2;
@@ -233,7 +248,7 @@ function buildArt() {
   art.add(coil);
 
   // two sacks by the near-left corner
-  const sackMat = flat(COLORS.sack);
+  const sackMat = toon(COLORS.sack);
   const sackGeo = new THREE.SphereGeometry(0.42, 10, 8);
   for (const [x, z, s] of [[-(hw - 1.1), hd - 1.2, 1], [-(hw - 1.9), hd - 0.85, 0.8]]) {
     const sack = new THREE.Group();
@@ -249,7 +264,7 @@ function buildArt() {
 
   // the props are many small flat-painted boxes: bake them (and their blob shadows) into two meshes; the lantern glass stays apart
   // because step 6 lights it at dusk
-  mergeFlatProps(art);
+  mergeToonProps(art);
 
   // walkable ellipse for this orientation
   bounds.halfWidth = hw - D.walkMargin;

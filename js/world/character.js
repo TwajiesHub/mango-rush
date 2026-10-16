@@ -7,19 +7,26 @@
 //   animateCharacter(ch, dt, speed, time)    the menu and game-over poses (the same animation at a share of top speed)
 //   disposeCharacter(ch)
 // Numbers come from TUNE (core/config.js). No allocation per frame.
+//
+// STEP 4 (the look): every part is a TOON material in the player's exact start.ng colours (top = primaryColor, bottoms = secondaryColor,
+// plus skin and hair). Each rigid segment (head with hat and hair cap, torso, thigh, shin with foot, upper arm, forearm with hand) is BAKED
+// into ONE toon mesh with ONE merged umber outline, on the same pivots as before. A shared NEUTRAL print texture (stripes + a row of dots,
+// 30% darker) multiplies the vertex colours on the torso, sleeves, thighs, shins and skirt, so the print is exactly 30% darker than the
+// player's own top and bottoms colours. Dread / braid locks are baked into 4 swinging clusters with darker tips (no outlines: they swing
+// apart; the hair cap carries the outline); ponytail, scarf tail, backpack, afro and bun keep their own outline.
+//   triggerReaction(ch, 'catch' | 'hit' | 'cheer' | 'wave') -> void   short layered reactions (never block movement; additive visuals)
+//   setCharacterPose(ch, null | 'slump' | 'cheer') -> void             a held pose (the game-over screen)
+//   updateCharacterMotion(...) returns 1 on a foot plant, as before.
 // Every option from the start.ng character creator changes the model:
 // body, skin, hair, hair colour, top (primaryColor), bottoms (secondaryColor), hat, extra (accessory).
 import * as THREE from 'three';
 import { springStep } from '../core/motion.js';
 import { TUNE } from '../core/config.js';
+import { toon, bakeToon } from './materials.js';
 
-const mats = new Map();
+// every part is a cached TOON material in its exact colour; the old PBR options (roughness, metalness) do not apply to cel shading
 function mat(color, opts = {}) {
-  const key = color + JSON.stringify(opts);
-  if (!mats.has(key)) {
-    mats.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0, ...opts }));
-  }
-  return mats.get(key);
+  return toon(color, { flatShading: !!opts.flatShading });
 }
 
 function mesh(geo, material, x = 0, y = 0, z = 0) {
@@ -62,10 +69,13 @@ export function buildCharacter(style, name) {
     const pivot = new THREE.Group();
     pivot.position.set(side * 0.14, 0.72, 0);
     const thigh = mesh(new THREE.CylinderGeometry(0.105, 0.1, 0.31, 12), bottoms, 0, -0.155, 0);
+    thigh.userData.print = true;
     const knee = new THREE.Group();
     knee.position.y = -0.31;
     const shin = mesh(new THREE.CylinderGeometry(0.1, 0.095, 0.31, 12), bottoms, 0, -0.155, 0);
+    shin.userData.print = true;
     const kneeCap = mesh(new THREE.SphereGeometry(0.1, 10, 8), bottoms, 0, 0, 0);
+    kneeCap.userData.print = true;
     const foot = mesh(new THREE.BoxGeometry(0.2, 0.12, 0.32), shoe, 0, -0.31, 0.05);
     knee.add(shin, kneeCap, foot);
     pivot.add(thigh, knee);
@@ -78,18 +88,22 @@ export function buildCharacter(style, name) {
   const torsoGeo = new THREE.CapsuleGeometry(0.3, 0.42, 6, 16);
   const torso = mesh(torsoGeo, top, 0, 1.17, 0);
   torso.scale.set(female ? 0.96 : 1.12, 1, 0.72);
+  torso.userData.print = true;
+  torso.userData.printScale = [2, 1.05];
   body.add(torso);
 
   // hips / waistband in bottoms colour
   const hips = mesh(new THREE.CylinderGeometry(female ? 0.31 : 0.3, 0.3, 0.16, 16), bottoms, 0, 0.78, 0);
   hips.scale.z = 0.75;
+  hips.userData.print = true;
+  hips.userData.printScale = [2, 1];
   body.add(hips);
 
   if (female) {
     const skirt = mesh(new THREE.CylinderGeometry(0.3, 0.44, 0.36, 20, 1, true), bottoms, 0, 0.62, 0);
-    skirt.material = bottoms.clone();
-    skirt.material.side = THREE.DoubleSide;
     skirt.scale.z = 0.82;
+    skirt.userData.print = true;
+    skirt.userData.printScale = [2, 1];
     body.add(skirt);
   }
 
@@ -105,6 +119,7 @@ export function buildCharacter(style, name) {
     pivot.position.set(side * shoulderX, 1.45, 0);
     pivot.rotation.z = side * 0.08;
     const sleeve = mesh(new THREE.CylinderGeometry(0.1, 0.095, 0.28, 12), top, 0, -0.13, 0);
+    sleeve.userData.print = true;
     const elbow = new THREE.Group();
     elbow.position.y = -0.28;
     const forearm = mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.3, 12), skin, 0, -0.14, 0);
@@ -145,6 +160,7 @@ export function buildCharacter(style, name) {
   } else if (hairKind === 'bun') {
     hairCap(0.5);
     const bun = mesh(new THREE.SphereGeometry(0.15, 16, 12), hair, 0, 0.24, -0.24);
+    bun.userData.keep = true;   // baked on its own below: it jiggles
     head.add(bun);
     trail.push({ obj: bun, set: 0, gain: 0.16, jiggle: true, x0: 0, y0: 0.24, z0: -0.24 });
   } else if (hairKind === 'ponytail') {
@@ -161,7 +177,8 @@ export function buildCharacter(style, name) {
     trail.push({ obj: tailPivot, set: 0, gain: 1.1, baseX: 0.35, baseZ: 0 });
   } else if (hairKind === 'afro') {
     const afro = mesh(new THREE.IcosahedronGeometry(0.43, 2), hair, 0, 0.2, -0.12);
-    afro.material = mat(s.hairColor, { roughness: 1, flatShading: true });
+    afro.material = mat(s.hairColor, { flatShading: true });
+    afro.userData.keep = true;   // baked on its own below: it jiggles
     head.add(afro);
     trail.push({ obj: afro, set: 0, gain: 0.12, jiggle: true, x0: 0, y0: 0.2, z0: -0.12 });
     hatBase = 0.56;
@@ -171,23 +188,52 @@ export function buildCharacter(style, name) {
     cap.rotation.x = -0.35;
     head.add(cap);
     const count = braids ? 17 : 13;
-    const bead = mat('#f5c518', { metalness: 0.6, roughness: 0.3 });
+    const bead = mat('#f5c518');
+    // locks swing from the scalp. They are baked into 4 clusters (left, back-left, back-right, right): each cluster is ONE mesh on ONE
+    // pivot, so 13-17 locks cost 4 draw calls. Darker tips and every other lock a shade darker give the edge tone (vertex colours).
+    const nClusters = 4;
+    const infos = [];
     for (let i = 0; i < count; i++) {
       // angle measured from the face (+z): covers both sides and the back, never the face
-      const a = Math.PI * 0.42 + (i / (count - 1)) * Math.PI * 1.16;
-      const len = (braids ? 0.5 : 0.42) + ((i * 7) % 5) * 0.045;
-      const w = braids ? 0.028 : 0.042;
-      // each lock hangs from a pivot at the scalp, so it swings from the head
-      const lockPivot = new THREE.Group();
-      const r = HEAD_R + 0.02;
-      lockPivot.position.set(Math.sin(a) * r, 0.1, Math.cos(a) * r);
-      lockPivot.rotation.z = Math.sin(a) * 0.25;
-      lockPivot.rotation.x = -Math.cos(a) * 0.25;
-      const lock = mesh(new THREE.CylinderGeometry(w, w * 0.8, len, 8), hair, 0, -len / 2, 0);
-      lock.add(mesh(new THREE.SphereGeometry(braids ? 0.035 : 0.042, 8, 6), braids ? bead : hair, 0, -len / 2, 0));
-      lockPivot.add(lock);
-      head.add(lockPivot);
-      trail.push({ obj: lockPivot, set: 0, gain: 0.6 + len * 0.9, baseX: lockPivot.rotation.x, baseZ: lockPivot.rotation.z });
+      const ang = Math.PI * 0.42 + (i / (count - 1)) * Math.PI * 1.16;
+      infos.push({
+        i, a: ang, len: (braids ? 0.5 : 0.42) + ((i * 7) % 5) * 0.045, w: braids ? 0.028 : 0.042,
+        x: Math.sin(ang) * (HEAD_R + 0.02), z: Math.cos(ang) * (HEAD_R + 0.02), c: Math.min(nClusters - 1, Math.floor((i * nClusters) / count)),
+      });
+    }
+    for (let c = 0; c < nClusters; c++) {
+      const mine = infos.filter((q) => q.c === c);
+      if (!mine.length) continue;
+      const cx = mine.reduce((t, q) => t + q.x, 0) / mine.length;
+      const cz = mine.reduce((t, q) => t + q.z, 0) / mine.length;
+      const cluster = new THREE.Group();
+      cluster.position.set(cx, 0.1, cz);
+      cluster.userData.clustered = true;
+      head.add(cluster);
+      const parts = [];
+      const holders = [];
+      let gainSum = 0;
+      for (const q of mine) {
+        const holder = new THREE.Group();
+        holder.position.set(q.x - cx, 0, q.z - cz);
+        holder.rotation.z = Math.sin(q.a) * 0.25;
+        holder.rotation.x = -Math.cos(q.a) * 0.25;
+        const lock = mesh(new THREE.CylinderGeometry(q.w, q.w * 0.8, q.len, 8), hair, 0, -q.len / 2, 0);
+        const shade = q.i % 2 ? 0.9 : 1;
+        lock.userData.colorFn = (lx, ly, lz, col) => col.multiplyScalar(shade * (0.6 + 0.4 * Math.min(1, ((ly + q.len / 2) / q.len) * 1.7)));
+        const tip = mesh(new THREE.SphereGeometry(braids ? 0.035 : 0.042, 8, 6), braids ? bead : hair, 0, -q.len, 0);
+        if (!braids) tip.userData.colorFn = (lx, ly, lz, col) => col.multiplyScalar(0.6);
+        holder.add(lock, tip);
+        cluster.add(holder);
+        holders.push(holder);
+        parts.push(lock, tip);
+        gainSum += 0.6 + q.len * 0.9;
+      }
+      cluster.updateMatrixWorld(true);
+      const baked = bakeToon(cluster, parts, { outline: 0 });
+      cluster.add(baked);
+      for (const h of holders) cluster.remove(h);
+      trail.push({ obj: cluster, set: 0, gain: gainSum / mine.length, baseX: 0, baseZ: 0 });
     }
     hatBase = HEAD_R + 0.0;
   }
@@ -218,13 +264,13 @@ export function buildCharacter(style, name) {
   } else if (s.hat === 'crown') {
     const gold = mat('#f5c518', { metalness: 0.85, roughness: 0.25, emissive: '#3a2a00' });
     const ring = mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.13, 24, 1, true), gold, 0, hatBase + 0.02, 0);
-    ring.material = gold.clone();
-    ring.material.side = THREE.DoubleSide;
     head.add(ring);
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
       const spike = mesh(new THREE.ConeGeometry(0.06, 0.16, 8), gold, Math.sin(a) * 0.25, hatBase + 0.16, Math.cos(a) * 0.25);
-      spike.add(mesh(new THREE.SphereGeometry(0.026, 8, 6), mat('#e63946', { metalness: 0.3, roughness: 0.2 }), 0, 0.09, 0));
+      const gem = mesh(new THREE.SphereGeometry(0.026, 8, 6), mat('#e63946'), 0, 0.09, 0);
+      gem.userData.noOutline = true;
+      spike.add(gem);
       head.add(spike);
     }
   }
@@ -237,22 +283,29 @@ export function buildCharacter(style, name) {
     head.add(beard);
     const stache = mesh(new THREE.CapsuleGeometry(0.03, 0.12, 4, 8), hair, 0, -0.055, HEAD_R - 0.01);
     stache.rotation.z = Math.PI / 2;
+    stache.userData.noOutline = true;
     head.add(stache);
   } else if (s.accessory === 'glasses') {
     const frame = mat('#111111', { roughness: 0.3, metalness: 0.3 });
     const lens = new THREE.MeshStandardMaterial({ color: '#9ad0ff', transparent: true, opacity: 0.35, roughness: 0.05 });
     for (const side of [-1, 1]) {
       const rim = mesh(new THREE.TorusGeometry(0.075, 0.016, 8, 20), frame, side * 0.11, 0.04, HEAD_R + 0.01);
+      rim.userData.noOutline = true;
       const glass = mesh(new THREE.CircleGeometry(0.07, 18), lens, side * 0.11, 0.04, HEAD_R + 0.008);
+      glass.userData.keep = true;   // transparent: stays its own mesh
       const arm = mesh(new THREE.BoxGeometry(0.015, 0.015, 0.3), frame, side * 0.3, 0.05, 0.16);
+      arm.userData.noOutline = true;
       head.add(rim, glass, arm);
     }
-    head.add(mesh(new THREE.BoxGeometry(0.07, 0.015, 0.015), frame, 0, 0.05, HEAD_R + 0.015));
+    const bridge = mesh(new THREE.BoxGeometry(0.07, 0.015, 0.015), frame, 0, 0.05, HEAD_R + 0.015);
+    bridge.userData.noOutline = true;
+    head.add(bridge);
   } else if (s.accessory === 'earrings') {
     const goldMat = mat('#f5c518', { metalness: 0.8, roughness: 0.25 });
     for (const side of [-1, 1]) {
       const hoop = mesh(new THREE.TorusGeometry(0.045, 0.012, 8, 16), goldMat, side * (HEAD_R + 0.02), -0.09, 0.02);
       hoop.rotation.y = Math.PI / 2;
+      hoop.userData.noOutline = true;
       head.add(hoop);
     }
   } else if (s.accessory === 'scarf') {
@@ -282,6 +335,42 @@ export function buildCharacter(style, name) {
     }
   }
 
+  // ---- BAKE: every rigid segment becomes ONE toon mesh with ONE merged outline (about 20 draw calls for the whole character)
+  const OL = 0.03;
+  // the meshes belonging to a segment: its own mesh children (and their mesh children), but not other pivots
+  const collect = (g) => {
+    const out = [];
+    const walk = (o) => {
+      for (const c of o.children) {
+        if (c.isMesh) { if (!c.userData.keep && !c.userData.isOutline) out.push(c); walk(c); }
+      }
+    };
+    walk(g);
+    return out;
+  };
+  const bake = (g, opts) => { const m = bakeToon(g, collect(g), { outline: OL, ...opts }); if (m) g.add(m); };
+  for (let i = 0; i < 2; i++) {
+    bake(legs[i], { print: true });
+    bake(knees[i], { print: true });
+    bake(arms[i], { print: true });
+    bake(elbows[i], {});
+  }
+  bake(body, { print: true });
+  bake(head, {});
+  for (const t of trail) {
+    if (t.jiggle) {
+      // afro and bun: their own mesh (flat-shaded for the afro) and outline, in head space; the jiggle then offsets the baked mesh
+      const src = t.obj;
+      src.userData.keep = false;
+      const baked = bakeToon(head, [src], { outline: OL, flatShading: src.material.flatShading });
+      head.add(baked);
+      t.obj = baked;
+      t.x0 = t.y0 = t.z0 = 0;
+    } else if (t.obj.isGroup && !t.obj.userData.clustered && t.obj.children.some((c) => c.isMesh)) {
+      bake(t.obj, {});      // ponytail, scarf tail, backpack: baked on their own pivots, with an outline
+    }
+  }
+
   // ---- name tag
   const tag = makeNameTag(name);
   tag.position.y = 2.75 + (s.hat === 'tophat' || s.hat === 'top hat' ? 0.35 : 0) + (s.hair === 'afro' ? 0.15 : 0);
@@ -292,33 +381,50 @@ export function buildCharacter(style, name) {
     body, legs, knees, arms, elbows, head, tag, trail,
     phase: 0, stride: 0, t: 0, moveBlend: 0, skidBlend: 0, stretch: 1, steps: 0,
     leanP: spring(), leanR: spring(), sets: [{ p: spring(), r: spring() }, { p: spring(), r: spring() }],
+    react: { catchT: 0, hitT: 0, cheerT: 0, waveT: 0, pose: '', slump: 0 },
   };
   return root;
 }
 
-function makeNameTag(text) {
+// An umber pill with cream Archivo 800. The font loads from Google Fonts: the tag is drawn at once (so it exists) and drawn AGAIN with
+// the real font as soon as it is there (main.js also waits for the font before building the character, so this is the fallback).
+const TAG_FONT = '800 52px Archivo, system-ui, sans-serif';
+function drawTag(text) {
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d');
-  const font = '800 52px "Bricolage Grotesque", system-ui, sans-serif';
-  ctx.font = font;
+  ctx.font = TAG_FONT;
   const w = Math.ceil(ctx.measureText(text).width) + 56;
   c.width = w;
   c.height = 84;
-  ctx.font = font;
-  ctx.fillStyle = 'rgba(26,20,16,0.78)';
-  const r = 42;
+  ctx.font = TAG_FONT;
+  ctx.fillStyle = '#2B1A10';
   ctx.beginPath();
-  ctx.roundRect(0, 0, w, 84, r);
+  ctx.roundRect(0, 0, w, 84, 42);
   ctx.fill();
-  ctx.fillStyle = '#fff6e5';
+  ctx.fillStyle = '#FFF1D6';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, w / 2, 45);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }));
+  return { tex, w };
+}
+
+function makeNameTag(text) {
+  const { tex, w } = drawTag(text);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true, toneMapped: false }));
   sprite.scale.set((w / 84) * 0.34, 0.34, 1);
   sprite.renderOrder = 10;
+  if (document.fonts && !document.fonts.check(TAG_FONT)) {
+    document.fonts.load(TAG_FONT).then(() => {
+      const next = drawTag(text);
+      const old = sprite.material.map;
+      sprite.material.map = next.tex;
+      sprite.material.needsUpdate = true;
+      sprite.scale.set((next.w / 84) * 0.34, 0.34, 1);
+      old.dispose();
+    }).catch(() => {});
+  }
   return sprite;
 }
 
@@ -410,7 +516,71 @@ export function updateCharacterMotion(ch, dt, m) {
       t.obj.rotation.z = t.baseZ + set.r.x * t.gain;
     }
   }
+  applyReactions(u, dt);
   return planted;
+}
+
+// ---------------------------------------------------------------- reactions (layered on top of the motion; they never block movement)
+export function triggerReaction(ch, kind) {
+  const r = ch.userData.react;
+  if (kind === 'catch') r.catchT = 0.25;
+  else if (kind === 'hit') r.hitT = 0.4;
+  else if (kind === 'cheer') r.cheerT = 0.9;
+  else if (kind === 'wave') r.waveT = 1.3;
+}
+
+export function setCharacterPose(ch, pose) {
+  ch.userData.react.pose = pose || '';
+}
+
+const lerp = (a, b, w) => a + (b - a) * w;
+
+function applyReactions(u, dt) {
+  const r = u.react;
+  r.catchT = Math.max(0, r.catchT - dt);
+  r.hitT = Math.max(0, r.hitT - dt);
+  r.cheerT = Math.max(0, r.cheerT - dt);
+  r.waveT = Math.max(0, r.waveT - dt);
+  u.body.position.z = 0;
+  const catchW = r.catchT > 0 ? Math.sin(Math.PI * (1 - r.catchT / 0.25)) : 0;
+  const hitP = 1 - r.hitT / 0.4;
+  const hitW = r.hitT > 0 ? Math.sin(Math.PI * hitP) : 0;
+  const cheerHeld = r.pose === 'cheer';
+  const cheerW = cheerHeld ? 1 : r.cheerT > 0 ? Math.min(1, (1 - r.cheerT / 0.9) * 6, r.cheerT * 6) : 0;
+  r.slump += ((r.pose === 'slump' ? 1 : 0) - r.slump) * (1 - Math.exp(-6 * dt));
+  const waveP = 1 - r.waveT / 1.3;
+  const waveW = r.waveT > 0 ? Math.min(1, waveP * 6, r.waveT * 6) : 0;
+  if (catchW + hitW + cheerW + r.slump + waveW < 0.001) return;
+
+  const body = u.body;
+  const armUp = Math.max(catchW, cheerW);
+  // hop: a small jump on a catch; a livelier bounce while cheering
+  body.position.y += catchW * 0.22 + Math.abs(Math.sin(u.t * (cheerHeld ? 7 : 12))) * 0.12 * cheerW;
+  // stumble: back and over, with a wobble that dies away
+  body.rotation.x -= 0.55 * hitW;
+  body.position.z = -0.2 * hitW;
+  body.rotation.z += Math.sin(hitP * 30) * 0.16 * (1 - hitP) * (r.hitT > 0 ? 1 : 0);
+  // slump: head down, shoulders dropped, arms loose
+  body.rotation.x += 0.2 * r.slump;
+  body.position.y -= 0.05 * r.slump;
+  u.head.rotation.x += 0.6 * r.slump;
+  for (let i = 0; i < 2; i++) {
+    const side = i ? 1 : -1;
+    const arm = u.arms[i];
+    const elbow = u.elbows[i];
+    arm.rotation.x = lerp(arm.rotation.x, -2.75, armUp);
+    arm.rotation.z += side * -0.3 * armUp;
+    elbow.rotation.x = lerp(elbow.rotation.x, -0.22, armUp);
+    arm.rotation.x += -0.9 * hitW * side;                              // arms flail out of step
+    arm.rotation.x = lerp(arm.rotation.x, 0.12 + Math.sin(u.t * 1.4 + i * 2) * 0.05, r.slump);
+    arm.rotation.z = lerp(arm.rotation.z, side * -0.12, r.slump);
+    elbow.rotation.x = lerp(elbow.rotation.x, -0.08, r.slump);
+  }
+  if (waveW > 0) {   // a small wave with the right arm
+    u.arms[1].rotation.x = lerp(u.arms[1].rotation.x, -2.35, waveW);
+    u.arms[1].rotation.z = lerp(u.arms[1].rotation.z, 0.5, waveW);
+    u.elbows[1].rotation.x = lerp(u.elbows[1].rotation.x, -0.5 + Math.sin(u.t * 13) * 0.6, waveW);
+  }
 }
 
 // The menu and game-over poses: the same animation at a share of top speed, in the direction the character faces.
