@@ -1,7 +1,8 @@
 // Mango Rush — falling items, warning rings, catching and landing.   OWNER: Claude Code  ·  STATUS: step 1 (mango, golden, coconut)
 //
 // CONTRACT:
-//   initDrops(scene) ; resetDrops(rng) ; updateDrops(dt) ; clearDrops()
+//   initDrops(parent)   parent = barge.deckRoot(): the drops move with the deck. Coordinates are deck-local.
+//   resetDrops(rng) ; updateDrops(dt) ; clearDrops() ; getDrops() (read only, for the ?debug bot)
 //   forceDrop(type, x, z, warn) -> void   a drop at a fixed spot, no rng (warm-up + happenings). type: 'mango'|'golden'|'coconut'
 //   getDropLog() -> array                 (added in step 1) the raw rng values of the first 10 drops of this run
 //
@@ -29,6 +30,7 @@ import { fruitCaught, coconutLanded } from './scoring.js';
 import { getPlayer } from './player.js';
 import { deckBounds } from '../world/barge.js';
 import { burst } from '../fx/juice.js';
+import { blobShadow } from '../world/materials.js';
 
 const D = CONFIG.drops;
 const DEBUG = typeof location !== 'undefined' && location.search.includes('debug');
@@ -100,11 +102,13 @@ function makeSlot(type) {
   const fillMat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR[type], transparent: true, opacity: 0.08, depthWrite: false });
   marker.add(new THREE.Mesh(ringGeo, ringMat), new THREE.Mesh(fillGeo, fillMat));
   marker.rotation.x = -Math.PI / 2;
+  const shadow = blobShadow(0.5);
   group.visible = false;
   marker.visible = false;
-  scene.add(group, marker);
+  shadow.visible = false;
+  scene.add(group, marker, shadow);
   return {
-    type, id: 0, mesh: group, marker, bodyMat, ringMat, fillMat,
+    type, id: 0, mesh: group, marker, shadow, bodyMat, ringMat, fillMat,
     x: 0, z: 0, y: 0, age: 0, warn: 1, v0: 0, g: 0, landed: false, life: 0, spin: 0, caught: false,
   };
 }
@@ -124,6 +128,7 @@ function acquire(type) {
 function release(it) {
   it.mesh.visible = false;
   it.marker.visible = false;
+  it.shadow.visible = false;
   free[it.type].push(it);
 }
 
@@ -157,6 +162,9 @@ function launch(type, x, z, warn) {
   it.ringMat.opacity = 0.2;
   it.fillMat.opacity = 0.06;
   it.marker.visible = true;
+  it.shadow.position.set(x, 0.012, z);
+  it.shadow.scale.set(0.25, 1, 0.25);
+  it.shadow.visible = true;
   items.push(it);
   emit(EVENTS.DROP_SPAWN, { id: it.id, type, x, z, warnTime: warn });
   return it;
@@ -179,7 +187,7 @@ function separate(pos) {
     const b = deckBounds();
     const nx = pos.x + Math.cos(a) * (D.minSeparation + 0.2);
     const nz = pos.z + Math.sin(a) * (D.minSeparation + 0.2);
-    if (Math.hypot(nx / b.halfWidth, nz / b.halfDepth) < 1) { pos.x = nx; pos.z = nz; }
+    if (Math.hypot(nx / (b.halfWidth - 0.2), nz / (b.halfDepth - 0.2)) <= 1) { pos.x = nx; pos.z = nz; }
   }
 }
 
@@ -257,6 +265,11 @@ export function clearDrops() {
   items.length = 0;
 }
 
+// the live drops (read only; for the ?debug bot): { type, x, z, age, warn, landed }
+export function getDrops() {
+  return items;
+}
+
 export function getDropLog() {
   return dropLog;
 }
@@ -296,6 +309,7 @@ export function updateDrops(dt) {
       it.ringMat.opacity = 0.2 + 0.7 * progress;
       it.fillMat.opacity = 0.06 + 0.3 * progress;
       it.marker.scale.setScalar(1.35 - 0.45 * progress);
+      it.shadow.scale.set(0.25 + 0.3 * progress, 1, 0.25 + 0.3 * progress);
 
       if (fruit && dist < CONFIG.catchRadius && it.mesh.position.y < CONFIG.catchMaxHeight) { catchIt(it, i); continue; }
       if (it.age >= it.warn) {

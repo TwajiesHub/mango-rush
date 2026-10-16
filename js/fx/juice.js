@@ -333,7 +333,7 @@ function subscribe() {
     } else {
       feel('hit', at);
       popup(TEXT.popups.bonk.toUpperCase(), { x: e.x, y: 2.6, z: e.z }, 'bad');
-      if (!reduced() && navigator.vibrate) navigator.vibrate(120);
+      if (!reduced() && navigator.vibrate && navigator.userActivation?.hasBeenActive) navigator.vibrate(120);
     }
   });
   on(EVENTS.DASH, (e) => feel('dash', { x: e.x, y: 0.15, z: e.z }));

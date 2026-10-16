@@ -44,14 +44,52 @@ export const CONFIG = Object.freeze({
   bat: { fromPhase: 'dusk', every: [25, 40], warn: 1.0 },
   happeningWarnTime: 2,       // banner + music drop before a happening
 
+  // The barge (world/barge.js). Units are world units; the deck top is y = 0.
+  deck: {
+    width: 18,
+    depth: 12,
+    walkMargin: 0.6,          // the walkable ellipse is the deck minus this on every side
+    rim: 0.35,                // width of the raised rim
+    rimHeight: 0.15,
+    hull: 0.9,                // how far the hull sides go down
+    chamfer: 0.7,
+    waterY: -0.55,
+    bob: { y: 0.03, roll: 0.6, pitch: 0.4, speed: 0.45 },   // world units, degrees, degrees; speed = cycles per second
+    slowZone: 0.12,           // the player starts slowing this share of the radius before the rim
+  },
+
+  // The camera (world/renderer.js).
+  camera: {
+    fov: 50,                  // vertical, degrees
+    elevationDeg: 50,         // the play camera sees the deck centre from this angle above the water (eased off on narrow screens)
+    horizonFrac: 0.25,        // the painted horizon sits this far from the top of the screen in play / over
+    fitMargin: 1.0,           // world units around the walkable area that must stay on screen (a warning ring at the edge is ~1 unit wide)
+    screenPad: 0.03,         // share of half the screen kept free at the sides and top
+    bottomNdc: { landscape: -0.82, portrait: -0.62 },   // where the near edge of the deck sits (-1 = screen bottom)
+    followShare: 0.15,        // the camera moves this share of the player's offset from the centre
+    followFreq: 1.6,
+    followZeta: 1,
+    poseFreq: 2.2,            // how fast the camera glides between menu / play / over poses
+    over: { farther: 1.12, higherDeg: 5, drift: 0.7 },
+    // the start-screen camera: position, tilt, where the horizon sits (share from the top) and where the character stands
+    menu: {
+      landscape: { pos: [-2.0, 2.4, 8.0], pitchDeg: 8, horizonFrac: 0.62, stand: [0, -3.2] },
+      portrait: { pos: [0, 1.5, 14.5], pitchDeg: 3, horizonFrac: 0.37, stand: [0, 0] },
+    },
+  },
+
+  world: {
+    flowSpeed: 1.2,           // how fast the water streams past the barge (units / second)
+  },
+
   // Falling items (play/drops.js). Fall time is the warning time from `difficulty`, so the ring tells the truth.
   drops: {
     height: 16,               // spawn height above the ground
     gravity: 22,              // used when the warning time is long enough; shorter warnings add a starting speed
     firstAt: 0.6,             // seconds into the run
     gapJitter: [0.75, 1.25],  // each gap is dropGap x a number in this range
-    aimChance: 0.45,          // share of coconuts aimed at the player
-    aimRadius: 2.6,           // aimed coconuts land within this distance of the player
+    aimChance: 0.25,          // share of coconuts aimed at the player (0.45 on the step 1 island; the deck is 40% of its area)
+    aimRadius: 3.4,           // aimed coconuts land within this distance of the player (2.6 in step 1)
     edgeMargin: 0.4,          // random drops stay this far inside the deck edge
     minSeparation: 1.3,       // falling items keep this far apart
     volleyFromT: 35,          // seconds; a coconut can bring two friends from here on

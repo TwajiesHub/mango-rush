@@ -1,42 +1,81 @@
-// Mango Rush — renderer, camera rig, portrait.   OWNER: Claude Code  ·  STATUS: step 1 (v0 look; quality manager comes later)
+// Mango Rush — renderer, camera rig, portrait.   OWNER: Claude Code  ·  STATUS: step 2 (tilted camera; quality manager comes later)
 //
 // CONTRACT:
-//   initRenderer(canvas) -> { scene, camera, renderer }
+//   initRenderer(canvas) -> { scene, camera, renderer }     (the camera is a child of the scene: the backdrop hangs on it)
 //   setCameraMode(mode: 'menu'|'play'|'over') ; setFollowTarget(object3D)
-//   renderFrame(realDt) — eases the camera toward its mode's pose, adds juice.cameraShake(), renders.
+//   renderFrame(realDt) — glides the camera to its mode's pose, adds juice.cameraShake(), aligns the backdrop, renders.
 //   makePortrait(characterObject) -> string   data URL (PNG) of the character's head, 128x128, transparent background
+//   isPortraitScreen() -> boolean             the screen is taller than wide (phones held upright)
+//   menuStand() -> { x, z }                   where the character stands on the start screen (deck-local)
+//   getRenderer() / getCameraDebug()          for ?debug measurements
 //
-// No real-time shadow maps. Pixel ratio is capped at CONFIG.quality.maxPixelRatio.
+// PLAY CAMERA. A normal tilted camera (no lens shift) that looks at the deck from CONFIG.camera.elevationDeg. On every
+// resize, and whenever the deck's orientation changes, it is FITTED: the smallest distance at which the whole walkable
+// area plus CONFIG.camera.fitMargin is on screen (also with the camera at its follow extremes), and the tilt that puts the
+// deck's near edge at CONFIG.camera.bottomNdc. If a screen is too narrow for that elevation, the elevation is eased off.
+// Follow: the camera moves CONFIG.camera.followShare of the player's offset, one spring per axis (motion.js springStep).
+// The camera never bobs. A tilt this steep keeps the real horizon off the top of the screen, so in play the horizon is the
+// painted line at CONFIG.camera.horizonFrac (see journey.js).
+//
+// MENU CAMERA. Low, looking almost level: the REAL horizon is on screen. A lens shift (projection matrix element [9])
+// puts it at the menu's horizonFrac, and journey.js finds it by projecting far points on the water plane.
+// OVER CAMERA. The play pose, a little higher and further back, drifting slowly.
+// Moving between modes is a spring glide on position, tilt and lens shift. Camera shake from juice.cameraShake()
+// (x, y, roll) applies in every mode. No real-time shadow maps. Pixel ratio is capped (CONFIG.quality).
 
 import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
+import { springStep } from '../core/motion.js';
 import { cameraShake } from '../fx/juice.js';
+import { deckBounds, deckSize } from './barge.js';
+import { syncBackdrop } from './journey.js';
+
+const DEG = Math.PI / 180;
+const C = CONFIG.camera;
 
 let ctx = null;
 let mode = 'menu';
 let follow = null;
+let clock = 0;
 
-const camPos = new THREE.Vector3(0, 6, 14);
-const camLook = new THREE.Vector3();
-const wantPos = new THREE.Vector3();
-const wantLook = new THREE.Vector3();
+// the camera pose is a set of springs
+const pose = { x: { x: 0, v: 0 }, y: { x: 0, v: 0 }, z: { x: 0, v: 0 }, pitch: { x: 0, v: 0 }, e9: { x: 0, v: 0 } };
 let snapNext = true;
+let fit = null;
+let fitKey = '';
 
-function skyTexture() {
-  const c = document.createElement('canvas');
-  c.width = 2;
-  c.height = 512;
-  const g2 = c.getContext('2d');
-  const g = g2.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, '#ff7b54');
-  g.addColorStop(0.45, '#ffb26b');
-  g.addColorStop(0.75, '#ffd59e');
-  g.addColorStop(1, '#ffe8c7');
-  g2.fillStyle = g;
-  g2.fillRect(0, 0, 2, 512);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+export function isPortraitScreen() {
+  return ctx ? ctx.camera.aspect < 1 : innerHeight > innerWidth;
+}
+
+export function menuStand() {
+  const m = C.menu[isPortraitScreen() ? 'portrait' : 'landscape'].stand;
+  return { x: m[0], z: m[1] };
+}
+
+export function getRenderer() {
+  return ctx.renderer;
+}
+
+// for ?debug: where a deck-local point is on screen right now (ndc, -1..1)
+export function debugProject(x, y, z) {
+  const v = new THREE.Vector3(x, y, z).project(ctx.camera);
+  return { x: v.x, y: v.y };
+}
+
+// for ?debug: the fitted play camera and where the camera is now
+export function getCameraDebug() {
+  const c = ctx.camera;
+  const size = deckSize();
+  const corners = [[-1, 1], [1, 1], [-1, -1], [1, -1], [0, 0]].map(([sx, sz]) => {
+    const v = new THREE.Vector3(sx * size.width / 2, 0, sz * size.depth / 2).project(c);
+    return [+v.x.toFixed(2), +v.y.toFixed(2)];
+  });
+  return {
+    deckNdc: { nearLeft: corners[0], nearRight: corners[1], farLeft: corners[2], farRight: corners[3], centre: corners[4] },
+    mode, fit: fit && { D: fit.D, elevationDeg: fit.phi / DEG, pitchDeg: fit.pitch / DEG },
+    pos: [c.position.x, c.position.y, c.position.z], pitchDeg: pose.pitch.x / DEG, lensShift: pose.e9.x, aspect: c.aspect,
+  };
 }
 
 export function initRenderer(canvas) {
@@ -45,25 +84,19 @@ export function initRenderer(canvas) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.localClippingEnabled = true;   // the backdrop is clipped at the horizon line
+  renderer.setClearColor('#D9472F');
 
   const scene = new THREE.Scene();
-  scene.background = skyTexture();
-  scene.fog = new THREE.Fog('#ffc58f', 34, 90);
-
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
-
-  scene.add(new THREE.HemisphereLight('#ffe2bd', '#5c8a3c', 1.1));
-  const sun = new THREE.DirectionalLight('#fff0d6', 2.4);
-  sun.position.set(-9, 18, 7);
-  scene.add(sun);
+  const camera = new THREE.PerspectiveCamera(C.fov, 1, 0.5, 6000);
+  scene.add(camera);                      // so things can hang on it
 
   const resize = () => {
-    const w = innerWidth;
-    const h = innerHeight;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.fov = camera.aspect < 0.85 ? 58 : 50;
+    renderer.setSize(innerWidth, innerHeight, false);
+    camera.aspect = innerWidth / innerHeight;
+    camera.fov = C.fov;
     camera.updateProjectionMatrix();
+    fitKey = '';
   };
   addEventListener('resize', resize);
   resize();
@@ -80,33 +113,152 @@ export function setFollowTarget(obj) {
   follow = obj;
 }
 
-function aim() {
-  const portrait = ctx.camera.aspect < 0.85;
-  if (mode === 'menu' || !follow) {
-    // close-up of the character; on desktop it sits to the right of the menu panel
-    if (portrait) { wantPos.set(0, 1.6, 7.6); wantLook.set(0, -0.8, 0); }
-    else { wantPos.set(-1.4, 2.0, 5.5); wantLook.set(-2.1, 1.2, 0); }
-  } else {
-    const back = portrait ? 12.5 : 9.2;
-    const up = portrait ? 14.5 : 10.2;
-    const px = follow.position.x;
-    const pz = follow.position.z;
-    wantPos.set(px * 0.85, up, pz * 0.85 + back);
-    wantLook.set(px * 0.92, 0.4, pz * 0.92 - 0.6);
+// ---------------------------------------------------------------- fitting the play camera
+const tanHalfOf = (fovDeg) => Math.tan(fovDeg * 0.5 * DEG);
+
+// ndc of a world point for a camera at (cx, cy, cz), pitched down by `pitch`
+function project(cx, cy, cz, pitch, aspect, tanHalf, px, py, pz, out) {
+  const dx = px - cx;
+  const dy = py - cy;
+  const dz = pz - cz;
+  const sin = Math.sin(pitch);
+  const cos = Math.cos(pitch);
+  const depth = -dy * sin - dz * cos;           // along the view direction (0, -sin, -cos)
+  if (depth <= 0.01) { out.x = out.y = 9; return out; }
+  const yc = dy * cos - dz * sin;
+  out.x = dx / depth / (tanHalf * aspect);
+  out.y = yc / depth / tanHalf;
+  return out;
+}
+
+const tmp = { x: 0, y: 0 };
+
+function computeFit(aspect) {
+  const size = deckSize();
+  const b = deckBounds();
+  const portrait = size.orientation === 'portrait';
+  const tanHalf = tanHalfOf(C.fov);
+  const anchor = C.bottomNdc[portrait ? 'portrait' : 'landscape'];
+  const pad = 1 - C.screenPad;
+  // the rectangle that must be on screen: the walkable area plus the margin (at most a little past the deck itself)
+  const rw = Math.min(b.halfWidth + C.fitMargin, size.width / 2 + 0.4);
+  const rd = Math.min(b.halfDepth + C.fitMargin, size.depth / 2 + 0.4);
+  const fx = C.followShare * b.halfWidth;
+  const fz = C.followShare * b.halfDepth;
+
+  const attempt = (phi) => {
+    // the tilt that puts the near edge on the anchor line (a steeper tilt lifts everything on screen)
+    const solvePitch = (D) => {
+      let lo = 2 * DEG;
+      let hi = 88 * DEG;
+      for (let i = 0; i < 40; i++) {
+        const mid = (lo + hi) / 2;
+        project(0, D * Math.sin(phi), D * Math.cos(phi), mid, aspect, tanHalf, 0, 0, rd, tmp);
+        if (tmp.y < anchor) lo = mid; else hi = mid;
+      }
+      return (lo + hi) / 2;
+    };
+    const fits = (D, pitch) => {
+      for (const ox of [-fx, 0, fx]) {
+        for (const oz of [-fz, 0, fz]) {
+          const cy = D * Math.sin(phi);
+          const cz = D * Math.cos(phi) + oz;
+          for (const sx of [-rw, rw]) {
+            for (const sz of [-rd, rd]) {
+              project(ox, cy, cz, pitch, aspect, tanHalf, sx, 0, sz, tmp);
+              if (Math.abs(tmp.x) > pad || tmp.y > pad || tmp.y < -0.985) return false;
+            }
+          }
+        }
+      }
+      return true;
+    };
+    let lo = 6;
+    let hi = 120;
+    if (!fits(hi, solvePitch(hi))) return null;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid, solvePitch(mid))) hi = mid; else lo = mid;
+    }
+    return { D: hi, phi, pitch: solvePitch(hi) };
+  };
+  // narrow or short screens may not fit the deck at the preferred elevation: ease it off until they do
+  for (let deg = C.elevationDeg; deg >= 14; deg -= 2) {
+    const r = attempt(deg * DEG);
+    if (r) return r;
   }
+  return { D: 60, phi: 30 * DEG, pitch: 30 * DEG };
+}
+
+function ensureFit() {
+  const size = deckSize();
+  const key = `${ctx.camera.aspect.toFixed(4)}|${size.width}|${size.depth}`;
+  if (key !== fitKey) {
+    fitKey = key;
+    fit = computeFit(ctx.camera.aspect);
+  }
+}
+
+// ---------------------------------------------------------------- per frame
+const target = { x: 0, y: 0, z: 0, pitch: 0, e9: 0 };
+
+function aim() {
+  const tanHalf = tanHalfOf(C.fov);
+  if (mode === 'menu') {
+    const m = C.menu[isPortraitScreen() ? 'portrait' : 'landscape'];
+    target.x = m.pos[0]; target.y = m.pos[1]; target.z = m.pos[2];
+    target.pitch = m.pitchDeg * DEG;
+    // lens shift: the real horizon (ndc = tan(tilt) / tanHalf - shift) goes to the menu's horizonFrac
+    target.e9 = Math.tan(target.pitch) / tanHalf - (1 - 2 * m.horizonFrac);
+    return;
+  }
+  ensureFit();
+  let D = fit.D;
+  let phi = fit.phi;
+  let ox = 0;
+  let oz = 0;
+  if (mode === 'over') {
+    D *= C.over.farther;
+    phi += C.over.higherDeg * DEG;
+    ox = Math.sin(clock * 0.35) * C.over.drift;
+  } else if (follow) {
+    ox = follow.position.x * C.followShare;
+    oz = follow.position.z * C.followShare;
+  }
+  target.x = ox;
+  target.y = D * Math.sin(phi);
+  target.z = D * Math.cos(phi) + oz;
+  target.pitch = fit.pitch;
+  target.e9 = 0;
 }
 
 export function renderFrame(realDt) {
   const { renderer, scene, camera } = ctx;
+  clock += realDt;
   aim();
-  if (snapNext) { camPos.copy(wantPos); camLook.copy(wantLook); snapNext = false; }
-  const k = 1 - Math.exp(-(mode === 'menu' ? 3 : 6) * realDt);
-  camPos.lerp(wantPos, k);
-  camLook.lerp(wantLook, k);
+  if (snapNext) {
+    pose.x.x = target.x; pose.y.x = target.y; pose.z.x = target.z; pose.pitch.x = target.pitch; pose.e9.x = target.e9;
+    snapNext = false;
+  }
+  const playing = mode === 'play';
+  const fFreq = playing ? C.followFreq : C.poseFreq;
+  const fZeta = playing ? C.followZeta : 1;
+  springStep(pose.x, target.x, fFreq, fZeta, realDt);
+  springStep(pose.z, target.z, fFreq, fZeta, realDt);
+  springStep(pose.y, target.y, C.poseFreq, 1, realDt);
+  springStep(pose.pitch, target.pitch, C.poseFreq, 1, realDt);
+  springStep(pose.e9, target.e9, C.poseFreq, 1, realDt);
+
   const shake = cameraShake();
-  camera.position.set(camPos.x + shake.x, camPos.y + shake.y, camPos.z);
-  camera.lookAt(camLook);
-  if (shake.roll) camera.rotateZ(shake.roll);
+  camera.position.set(pose.x.x + shake.x, pose.y.x + shake.y, pose.z.x);
+  camera.rotation.set(-pose.pitch.x, 0, shake.roll);
+  camera.updateMatrixWorld();
+
+  // lens shift (menu only; zero in play)
+  camera.projectionMatrix.elements[9] = pose.e9.x;
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+
+  syncBackdrop(camera, 1 - 2 * C.horizonFrac);
   renderer.render(scene, camera);
 }
 
@@ -124,15 +276,16 @@ export function makePortrait(characterObject) {
       light.position.set(1.5, 2.5, 4);
       scene.add(light);
       const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
-      const target = new THREE.WebGLRenderTarget(size, size);
-      target.texture.colorSpace = THREE.SRGBColorSpace;
-      portrait = { scene, camera, target, holder: new THREE.Group(), pixels: new Uint8Array(size * size * 4) };
+      const rt = new THREE.WebGLRenderTarget(size, size);
+      rt.texture.colorSpace = THREE.SRGBColorSpace;
+      portrait = { scene, camera, target: rt, holder: new THREE.Group(), pixels: new Uint8Array(size * size * 4) };
       scene.add(portrait.holder);
     }
-    const { scene, camera, target, holder, pixels } = portrait;
+    const { scene, camera, target: rt, holder, pixels } = portrait;
     const copy = characterObject.clone(true);   // shares geometry and materials with the original
     copy.position.set(0, 0, 0);
     copy.rotation.set(0, 0, 0);
+    copy.scale.set(1, 1, 1);
     copy.visible = true;
     copy.traverse((o) => { if (o.isSprite) o.visible = false; });   // no name tag
     holder.add(copy);
@@ -143,11 +296,11 @@ export function makePortrait(characterObject) {
     const oldColor = new THREE.Color();
     renderer.getClearColor(oldColor);
     const oldAlpha = renderer.getClearAlpha();
-    renderer.setRenderTarget(target);
+    renderer.setRenderTarget(rt);
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
     renderer.render(scene, camera);
-    renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
+    renderer.readRenderTargetPixels(rt, 0, 0, size, size, pixels);
     renderer.setRenderTarget(oldTarget);
     renderer.setClearColor(oldColor, oldAlpha);
     holder.remove(copy);

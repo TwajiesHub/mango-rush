@@ -105,8 +105,10 @@ export function initScreens(root, a) {
 
     <section class="screen screen--start" data-screen="start" aria-label="${$esc(TEXT.title)}">
       <div class="panel">
-        <p class="kicker">${$esc(TEXT.kicker)}</p>
-        <h1 class="wordmark" aria-label="${$esc(TEXT.title)}">${wordmarkSVG()}</h1>
+        <div class="brand">
+          <p class="kicker">${$esc(TEXT.kicker)}</p>
+          <h1 class="wordmark" aria-label="${$esc(TEXT.title)}">${wordmarkSVG()}</h1>
+        </div>
         <p class="tagline">${$esc(TEXT.tagline)}</p>
         <div class="who">
           <p class="who__name"></p>
@@ -153,25 +155,29 @@ export function initScreens(root, a) {
 
     <section class="screen screen--over" data-screen="over" role="dialog" aria-modal="true" aria-label="Game over">
       <div class="card card--poster">
-        <p class="kicker over__kicker"></p>
-        <h2 class="over__headline"></h2>
-        <p class="over__score" aria-live="polite">0</p>
-        <p class="over__stamp" hidden>${$esc(TEXT.gameOver.newBest)}</p>
-        <p class="over__board"></p>
-        <p class="over__medal"></p>
-        <div class="over__progress" hidden><div class="over__bar"><i></i></div><small></small></div>
-        <dl class="stats">
-          <div><dt>${$esc(TEXT.gameOver.stats.mangoes)}</dt><dd class="s-mangoes">0</dd></div>
-          <div><dt>${$esc(TEXT.gameOver.stats.bestCombo)}</dt><dd class="s-combo">x1</dd></div>
-          <div><dt>${$esc(TEXT.gameOver.stats.nearMisses)}</dt><dd class="s-near">0</dd></div>
-          <div><dt>${$esc(TEXT.gameOver.stats.survived)}</dt><dd class="s-time">0:00</dd></div>
-          <div><dt>${$esc(TEXT.start.best)}</dt><dd class="s-best">—</dd></div>
-        </dl>
-        <div class="actions">
-          <button class="btn btn--primary" type="button" data-act="again">${$esc(TEXT.gameOver.playAgain)}</button>
-          <button class="btn btn--secondary" type="button" data-act="share" hidden>${$esc(TEXT.gameOver.share)}</button>
-          <button class="btn btn--secondary" type="button" data-act="menu">${$esc(TEXT.gameOver.menu)}</button>
-          <button class="btn btn--text" type="button" data-act="leaderboard">${$esc(TEXT.leaderboard.title)}</button>
+        <div class="over__left">
+          <p class="kicker over__kicker"></p>
+          <h2 class="over__headline"></h2>
+          <p class="over__score" aria-live="polite">0</p>
+          <p class="over__stamp" hidden>${$esc(TEXT.gameOver.newBest)}</p>
+          <p class="over__best"></p>
+          <p class="over__board"></p>
+        </div>
+        <div class="over__right">
+          <p class="over__medal"></p>
+          <dl class="stats">
+            <div><dt>${$esc(TEXT.gameOver.stats.mangoes)}</dt><dd class="s-mangoes">0</dd></div>
+            <div><dt>${$esc(TEXT.gameOver.stats.bestCombo)}</dt><dd class="s-combo">x1</dd></div>
+            <div><dt>${$esc(TEXT.gameOver.stats.nearMisses)}</dt><dd class="s-near">0</dd></div>
+            <div><dt>${$esc(TEXT.gameOver.stats.survived)}</dt><dd class="s-time">0:00</dd></div>
+          </dl>
+          <div class="over__progress" hidden><div class="over__bar"><i></i></div><small></small></div>
+          <div class="actions">
+            <button class="btn btn--primary" type="button" data-act="again">${$esc(TEXT.gameOver.playAgain)}</button>
+            <button class="btn btn--secondary" type="button" data-act="share" hidden>${$esc(TEXT.gameOver.share)}</button>
+            <button class="btn btn--secondary" type="button" data-act="menu">${$esc(TEXT.gameOver.menu)}</button>
+            <button class="btn btn--text" type="button" data-act="leaderboard">${$esc(TEXT.leaderboard.title)}</button>
+          </div>
         </div>
       </div>
     </section>
@@ -333,7 +339,10 @@ export function showGameOver(summary, { player, portraitUrl, dailyLabel } = {}) 
   o.querySelector('.s-combo').textContent = `x${summary.bestMultiplier}`;
   o.querySelector('.s-near').textContent = num(summary.nearMisses);
   o.querySelector('.s-time').textContent = mmss(summary.timeSurvived);
-  o.querySelector('.s-best').textContent = dash(Math.max(summary.best || 0, summary.score));
+  // Best is a line under the score, or the NEW BEST stamp when this run is the new best
+  const bestLine = o.querySelector('.over__best');
+  bestLine.textContent = `${TEXT.start.best} ${num(Math.max(summary.best || 0, summary.score))}`;
+  bestLine.hidden = !!summary.isBest || !(summary.best > 0);
   o.querySelector('.over__medal').textContent = summary.medal === 'none' ? '' : `${TEXT.medals[summary.medal]} medal`;
 
   const prog = o.querySelector('.over__progress');

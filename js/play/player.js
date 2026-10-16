@@ -1,7 +1,7 @@
 // Mango Rush — player movement, dash, invulnerability.   OWNER: Claude Code  ·  STATUS: done (step 1)
 //
 // CONTRACT:
-//   initPlayer(scene) ; setCharacter(info) ; resetPlayer() ; updatePlayer(dt, input)
+//   initPlayer(parent) ; setCharacter(info)    parent = barge.deckRoot(): the player moves with the deck. Coordinates are deck-local. ; resetPlayer() ; updatePlayer(dt, input)
 //   getPlayer() -> { object, x, z, invulnerable, dashing }   the SAME object every call
 //   idlePlayer(realDt, screen) -> void   (added in step 1) main.js calls it when no run is being played: the
 //     character turns slowly on the start screen and stands idle on the game-over screen.
@@ -11,12 +11,13 @@
 //   Listens for EVENTS.HIT (invulnerable for CONFIG.player.invulnerable seconds).
 //   Emits EVENTS.DASH { x, z, dirX, dirZ }. Writes state.dashReadyFrac (0 = just used, 1 = ready).
 
-import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on, emit } from '../core/events.js';
 import { buildCharacter, animateCharacter, disposeCharacter } from '../world/character.js';
 import { deckBounds } from '../world/barge.js';
+import { blobShadow } from '../world/materials.js';
+import { menuStand } from '../world/renderer.js';
 
 const P = CONFIG.player;
 
@@ -39,11 +40,7 @@ const view = { object: null, x: 0, z: 0, invulnerable: false, dashing: false };
 export function initPlayer(s) {
   scene = s;
   // a soft blob under the feet (no real-time shadows)
-  blob = new THREE.Mesh(
-    new THREE.CircleGeometry(0.5, 20),
-    new THREE.MeshBasicMaterial({ color: '#1a1410', transparent: true, opacity: 0.28, depthWrite: false }),
-  );
-  blob.rotation.x = -Math.PI / 2;
+  blob = blobShadow(0.62, 0.55);
   blob.position.y = 0.02;
   scene.add(blob);
   on(EVENTS.HIT, () => { invuln = P.invulnerable; });
@@ -63,7 +60,7 @@ export function resetPlayer() {
   facing = 0;
   dashT = dashCool = invuln = 0;
   state.dashReadyFrac = 1;
-  if (model) { model.visible = true; model.position.set(0, 0, 0); model.rotation.y = 0; }
+  if (model) { model.visible = true; model.position.set(0, 0, 0); model.rotation.y = 0; model.scale.set(1, 1, 1); }
   syncView();
 }
 
@@ -105,9 +102,24 @@ export function updatePlayer(dt, input) {
   x += vx * dt;
   z += vz * dt;
 
-  // stay on the deck (an ellipse)
+  // the rim: slow down smoothly over the last stretch, then remove only the outward part of the velocity (no snap)
   const e = Math.hypot(x / b.halfWidth, z / b.halfDepth);
-  if (e > 1) { x /= e; z /= e; }
+  const zone = CONFIG.deck.slowZone;
+  if (e > 1 - zone) {
+    const nx = x / (b.halfWidth * b.halfWidth);
+    const nz = z / (b.halfDepth * b.halfDepth);
+    const nl = Math.hypot(nx, nz) || 1;
+    const ux = nx / nl;
+    const uz = nz / nl;
+    const out = vx * ux + vz * uz;
+    if (out > 0) {
+      const u = Math.min(1, (e - (1 - zone)) / zone);
+      const cut = u * u * (3 - 2 * u);
+      vx -= ux * out * cut;
+      vz -= uz * out * cut;
+    }
+    if (e > 1) { x /= e; z /= e; }
+  }
 
   const moving = Math.hypot(vx, vz);
   if (moving > 0.3) {
@@ -126,9 +138,11 @@ export function idlePlayer(realDt, screen) {
   if (!model) return;
   idleTime += realDt;
   if (screen === 'start') {
-    model.position.set(0, 0, 0);
+    const stand = menuStand();
+    x = stand.x;
+    z = stand.z;
+    model.position.set(x, 0, z);
     model.rotation.y = Math.sin(idleTime * 0.6) * 0.7;
-    x = z = 0;
   }
   if (screen === 'start' || screen === 'over') {
     model.visible = true;

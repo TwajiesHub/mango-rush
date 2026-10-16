@@ -10,8 +10,8 @@ import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
 import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
-import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait } from './world/renderer.js';
-import { buildBarge, updateBarge } from './world/barge.js';
+import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getCameraDebug } from './world/renderer.js';
+import { buildBarge, updateBarge, deckRoot, setOrientation } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer } from './play/player.js';
 import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog } from './play/drops.js';
@@ -66,8 +66,8 @@ async function boot() {
 
   buildJourney(scene);
   buildBarge(scene);
-  initPlayer(scene);
-  initDrops(scene);
+  initPlayer(deckRoot());
+  initDrops(deckRoot());
 
   await loadPlayer();
   requestAnimationFrame(frame);
@@ -108,9 +108,15 @@ async function refreshPlayer() {
 }
 
 // ---------------------------------------------------------------- flow
+// the deck is turned for phones held upright; it is chosen between runs only (barge.js ignores it mid-run)
+function fitDeckToScreen() {
+  setOrientation(isPortraitScreen() ? 'portrait' : 'landscape');
+}
+
 function toMenu() {
   clearDrops();
   setScreen('start');
+  fitDeckToScreen();
   showHud(false);
   showTouchControls(false);
   setCameraMode('menu');
@@ -118,7 +124,8 @@ function toMenu() {
 }
 
 async function startRun(mode) {
-  await unlockAudio();
+  // never let audio hold the run back: a browser may leave resume() pending until a real gesture
+  await Promise.race([unlockAudio(), new Promise((r) => setTimeout(r, 300))]);
   state.mode = mode;
   const seed = mode === 'daily' ? dailySeed() : randomSeed();
   const rng = createRng(seed);
@@ -129,6 +136,7 @@ async function startRun(mode) {
   resetDrops(rng);
   resetHappenings(createRng(seed ^ 0x9e3779b9));
   resetJourney();
+  fitDeckToScreen();
   hideScreens();
   showHud(true);
   showTouchControls(isTouch());
@@ -155,6 +163,7 @@ function resume() {
 }
 
 on(EVENTS.RUN_END, (summary) => {
+  if (botModule?.isSimulating()) return;   // the ?debug simulator plays whole runs headlessly
   const saved = recordRun({ mode: summary.mode, score: summary.score, mangoes: summary.mangoes });
   summary.isBest = saved.isBest;
   summary.best = saved.best;
@@ -162,6 +171,7 @@ on(EVENTS.RUN_END, (summary) => {
   state.dailyBest = saved.dailyBest;
   lastSummary = summary;
   setScreen('over');
+  showHud(false);   // the game over card sits on the dimmed scene, without the HUD
   setCameraMode('over');
   showTouchControls(false);
   showGameOver(summary, { player: state.player, portraitUrl, dailyLabel: dailyLabel() });
@@ -203,6 +213,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshPlayer();
 });
 addEventListener('blur', () => { if (state.screen === 'play') pause(); });
+addEventListener('resize', () => { if (state.screen === 'start' || state.screen === 'over') fitDeckToScreen(); });
 
 // ---------------------------------------------------------------- loop
 let lastTs = performance.now();
@@ -217,6 +228,7 @@ function frame(ts) {
     if (phase !== state.phase) { state.phase = phase; emit(EVENTS.PHASE_CHANGE, { phase }); }
     const input = readInput();
     input.dash = takeDash();
+    if (botDriving && botModule) Object.assign(input, botModule.think());
     updatePlayer(dt, input);
     updateHappenings(dt);
     updateDrops(dt);
@@ -233,11 +245,20 @@ function frame(ts) {
 }
 
 // ---------------------------------------------------------------- debug (only with ?debug in the URL)
+let botModule = null;
+let botDriving = false;
 if (location.search.includes('debug')) {
+  import('./play/bot.js').then((m) => { botModule = m; });
   window.__mango = {
     state,
+    renderer: getRenderer,
+    camera: getCameraDebug,
     end() { if (state.screen === 'play') endRun('debug'); },
     dropLog: getDropLog,
+    bot: {
+      autoplay: (on = true) => { botDriving = !!on; return botDriving; },
+      simulate: (opts) => botModule.simulate(opts),
+    },
   };
   window.__mangoTest = { scoring: () => { const r = scoringSelfTest(); console[r.ok ? 'log' : 'error']('[scoring self-check]', r); return r; } };
 }

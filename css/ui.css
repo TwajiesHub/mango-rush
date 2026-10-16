@@ -58,18 +58,24 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 .toggles { display: flex; align-items: center; gap: 10px; }
 .controls-hint { margin: 0 0 0 6px; font-size: 13px; font-weight: 600; }
 
+.brand { display: grid; gap: 6px; }
 @media (max-width: 719px) {
-  .screen--start .panel { top: auto; width: 100%; max-height: 62vh; border-right: none; border-top: var(--border); padding: 18px var(--gutter) calc(18px + env(safe-area-inset-bottom)); justify-content: flex-start; }
-  svg.wordmark { width: min(200px, 56vw); }
-  .tagline { display: none; }
-  .screen--start .panel { gap: 10px; }
-  .who__badge { display: none; }
+  /* the sheet: name, chips, buttons, bests; the wordmark hangs over the sky above it */
+  .screen--start .panel { top: auto; width: 100%; max-height: 60vh; border-right: none; border-top: var(--border); padding: 14px var(--gutter) calc(14px + env(safe-area-inset-bottom)); justify-content: flex-start; gap: 10px; }
+  .brand { position: fixed; left: var(--gutter); top: calc(14px + env(safe-area-inset-top)); z-index: 1; pointer-events: none; }
+  svg.wordmark { width: min(210px, 56vw); }
+  .tagline, .who__badge, .controls-hint, .wearing .label { display: none; }
+  .actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .actions .btn { width: 100%; }
+  .bests { padding-right: 112px; }
+  .toggles { position: absolute; right: var(--gutter); bottom: calc(14px + env(safe-area-inset-bottom)); }
 }
 
 /* pause + game over + leaderboard cards */
 .screen--pause, .screen--over, .screen--board { display: grid; place-items: center; padding: var(--gutter); box-sizing: border-box; }
-.screen--pause { background: rgba(43, 26, 16, 0.55); backdrop-filter: blur(4px); }
-.screen--over { background: var(--night); background-image: radial-gradient(circle at 50% 50%, transparent 0 38%, rgba(15, 61, 46, 0.55) 38.5% 40%, transparent 40.5% 52%, rgba(15, 61, 46, 0.4) 52.5% 54%, transparent 54.5%); opacity: 0; transition: opacity var(--t-med); }
+.screen--pause { background: rgba(43, 26, 16, 0.5); backdrop-filter: blur(3px); }
+/* the 3D scene stays visible behind the card, dimmed (never a black page) */
+.screen--over { background: rgba(11, 11, 12, 0.5); opacity: 0; transition: opacity var(--t-med); }
 .screen--over.is-in { opacity: 1; }
 .screen--board { background: rgba(11, 11, 12, 0.6); z-index: 5; }
 .card { box-sizing: border-box; width: min(420px, 100%); max-height: 100%; overflow-y: auto; padding: 24px; display: grid; gap: 12px; background: var(--paper); border: var(--border); border-radius: var(--radius-card); box-shadow: var(--print-shadow); }
@@ -85,11 +91,14 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 .over__headline { font-size: 24px !important; }
 .over__score { margin: 0; font: 900 64px/1 var(--font-display); font-stretch: 112%; font-variant-numeric: tabular-nums; text-shadow: 4px 4px 0 var(--vermilion); }
 .over__stamp { justify-self: center; margin: 0; padding: 4px 12px; border: 2px solid var(--vermilion-dark); color: var(--vermilion-dark); font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase; transform: rotate(-4deg); }
+.over__left, .over__right { display: grid; gap: 12px; align-content: start; }
+.over__best { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
 .over__board, .over__medal { margin: 0; font-size: 14px; font-weight: 700; min-height: 1.2em; }
+.over__medal:empty, .over__board:empty { display: none; }
 .over__progress { display: grid; gap: 4px; }
 .over__bar { height: 10px; border: 1.5px solid var(--ink); border-radius: 99px; overflow: hidden; background: var(--paper-light); }
 .over__bar i { display: block; height: 100%; background: var(--saffron); border-right: 1.5px solid var(--ink); }
-.stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; }
+.stats { margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }   /* a 2 x 2 grid */
 .stats div { display: grid; gap: 2px; padding: 6px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-light); }
 .stats dt { font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .stats dd { margin: 0; font: 900 20px var(--font-display); font-variant-numeric: tabular-nums; }
@@ -194,6 +203,79 @@ body.is-madness::after { box-shadow: inset 0 0 120px 10px var(--gold); opacity: 
 body.is-madness .hud__combo { box-shadow: 0 0 18px var(--gold); }
 body.is-madness .gauge__ring { stroke: var(--gold); }
 @keyframes beat { 0%, 100% { opacity: 0.12; } 12% { opacity: 0.42; } 24% { opacity: 0.15; } 36% { opacity: 0.34; } }
+
+/* ---------------------------------------------------------------- short screens: everything fits without scrolling
+   Checked at 1280x550, 1440x900, 390x844 and 360x640. Inner scrolling stays only as a last resort below 360x560. */
+@media (max-height: 700px) and (min-width: 720px) {
+  .screen--start .panel { padding: 16px 32px; gap: 8px; }
+  svg.wordmark { width: min(190px, 40vh); }
+  .tagline { font-size: 14px; line-height: 1.35; max-width: 56ch; }
+  .who__name { font-size: 16px; }
+  .btn { min-height: var(--touch-min); padding: 8px 18px; font-size: 16px; }
+  .btn--primary { font-size: 19px; }
+  .bests b { font-size: 22px; }
+  .card { padding: 16px 20px; gap: 8px; }
+  .card h2 { font-size: 24px; }
+  .switches { gap: 6px; }
+  .switch { min-height: 40px; padding: 4px 12px; }
+  .board__table { font-size: 13px; }
+  .board__table td, .board__table th { padding: 3px 4px; }
+  .hud__card { transform-origin: top left; }
+}
+@media (max-height: 600px) and (min-width: 720px) {
+  .screen--start .panel { padding: 12px 28px; gap: 6px; }
+  svg.wordmark { width: 150px; }
+  .tagline, .who__badge { display: none; }
+  .chips li { padding: 2px 8px; font-size: 12px; }
+  .card { padding: 12px 18px; gap: 6px; }
+  .board__table td, .board__table th { padding: 2px 4px; }
+  .countdown { font-size: min(26vw, 140px); }
+}
+/* game over: two columns on wide, short screens */
+@media (min-width: 800px) and (max-height: 700px) {
+  .card--poster { width: min(860px, 100%); grid-template-columns: 1fr 1fr; gap: 20px; align-items: center; }
+  .over__left { text-align: center; justify-items: center; }
+  .over__score { font-size: 56px; }
+  .over__headline { font-size: 20px !important; }
+  .card--poster .actions { flex-wrap: nowrap; }
+  .card--poster .actions .btn { width: auto; flex: 1 1 auto; }
+  .card--poster .actions .btn--text { flex: 0 0 auto; }
+}
+@media (max-height: 600px) and (min-width: 800px) {
+  .over__score { font-size: 46px; }
+  .stats dd { font-size: 17px; }
+  .stats div { padding: 4px 6px; }
+  .over__progress small { font-size: 11px; }
+}
+/* phones */
+@media (max-width: 719px) and (max-height: 760px) {
+  .screen--start .panel { max-height: 72vh; padding: 12px var(--gutter) calc(12px + env(safe-area-inset-bottom)); gap: 8px; }
+  svg.wordmark { width: 150px; }
+  .kicker { font-size: 10px; }
+  .chips li { padding: 2px 8px; font-size: 12px; }
+  .btn { padding: 8px 14px; font-size: 16px; }
+  .btn--primary { font-size: 19px; }
+  .bests b { font-size: 22px; }
+  .controls-hint { display: none; }
+  .card { padding: 14px; gap: 8px; }
+  .card h2 { font-size: 24px; }
+  .over__score { font-size: 48px; }
+  .over__headline { font-size: 20px !important; }
+  .stats dd { font-size: 17px; }
+  .stats div { padding: 4px 6px; }
+  .switch { min-height: 40px; }
+}
+@media (max-width: 719px) and (max-height: 660px) {
+  .screen--start .panel { max-height: 78vh; gap: 6px; }
+  .wearing .label { display: none; }
+  .over__medal { display: none; }
+  .over__score { font-size: 40px; }
+  .card--poster .actions { gap: 8px; }
+  .card--poster .actions .btn { min-height: var(--touch-min); padding: 6px 12px; }
+}
+@media (max-height: 560px) {
+  .card, .screen--start .panel { overflow-y: auto; }   /* last resort */
+}
 
 /* ---------------------------------------------------------------- reduced motion: fades only */
 body.is-reduced-motion *, body.is-reduced-motion *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
