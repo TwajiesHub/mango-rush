@@ -1,34 +1,43 @@
 # Mango Rush
 
-A three.js game for [start.ng](https://start.ng). Mangoes fall from the sky: catch them, dodge the coconuts, chain catches for a combo. Golden mangoes are worth 5.
+A three.js arcade game for [start.ng](https://start.ng). Ride the mango barge, catch the mangoes, dodge the coconuts, chain catches for a combo.
+You play as your own start.ng character. Static files only: plain ES modules, no build step (three.js r160 comes from jsDelivr).
 
-**You play as your own start.ng character.**
+**Version 1 is being built step by step** (see `docs/ROADMAP.md`). Step 1 is the foundation: the version 1 structure with version 0's island gameplay running on it.
 
-## How it uses start.ng
+## Run it locally
 
-- Follows https://start.ng/docs.md: on load it asks start.ng's connect page who is playing (`startng:whoami`, checking the message origin), and falls back to `GET https://api.start.ng/auth/me`.
-- Signed-in players' runs go to the start.ng leaderboard (columns in `startng.json`: score, survived, mangoes).
-- It reads `character.name` and `character.style` (`primaryColor`, `secondaryColor`, `skinColor`, `hairColor`, `body`, `hair`, `hat`, `accessory`) and builds the 3D player from them (`js/character.js`).
-  - Top uses `primaryColor`, bottoms use `secondaryColor`.
-  - Skin, hair style and hair colour, body (male/female), hat (cap, beanie, top hat, crown) and extra (beard, glasses, scarf, backpack) all change the model.
-  - The scarf and backpack colours are derived from your own palette.
-- If you change your look on start.ng and come back to the tab, the game fetches it again and rebuilds your character.
-- If you're not signed in, you play as a guest, with a link to sign in.
-- Your best score is saved per start.ng user in the browser.
+```
+py -m http.server 8000
+```
+
+Open http://localhost:8000. Off start.ng there is no sign-in, so after about 4 s the game continues as a guest.
+Add `?debug` to the URL for test hooks (`window.__mango`, `window.__mangoTest.scoring()`, the first drops of each run in the console).
 
 ## Controls
 
-- WASD or arrow keys to move, Space to dash.
-- On mobile, drag anywhere to move and tap **Dash** to dash.
+- WASD or arrow keys move, Space dashes, Esc or P pauses.
+- Phones: drag anywhere to move, tap **Dash**.
 
-## Files
+## How it uses start.ng
+
+Only `js/startng.js` talks to start.ng (see `docs/startng-docs.md`): who is playing and their character (hidden connect page, with `api.start.ng/auth/me` as a fallback), the leaderboard (`startng.json`: score, survived, mangoes), and a re-check when you come back to the tab so a changed look is rebuilt.
+
+## Structure
 
 ```
-index.html       page + UI
-style.css        UI styling
-js/main.js       scene, game loop, spawning, scoring
-js/character.js  builds the character from the start.ng style
-js/startng.js    start.ng API (auth/me)
+index.html            page shell + import map
+css/                  tokens.css (design tokens), ui.css (screens, HUD, pop-ups)
+js/main.js            boot, run flow, game loop
+js/startng.js         start.ng wiring
+js/core/              events, state, config (all tuning numbers), rng, store, input
+js/world/             renderer + camera, barge (the island for now), journey, character
+js/play/              player, drops, scoring, happenings
+js/fx/juice.js        freeze, shake, squash, particles, pop-ups
+js/audio/audio.js     sound effects (the music loop comes in step 9)
+js/ui/                hud, screens, wordmark, share card
+js/content/text.js    every word the player reads
+docs/                 design, architecture and step briefs
 ```
 
-No build step: three.js loads from the jsDelivr CDN through an import map. To run it locally, use any static server, for example `npx serve .`. You'll play as a guest locally, because the start.ng cookie only exists on start.ng.
+Each module's header comment is its contract: what it exports, which events it emits or hears, which state it owns.
