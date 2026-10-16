@@ -2,6 +2,7 @@
 //
 // Screens: loading -> start -> (warmup, first run only) -> play <-> paused -> over -> start | play
 // Each frame: realDt -> dt = realDt * timeScale() (freeze / slow motion) -> update modules -> HUD -> render.
+// realDt comes from core/frameclock.js: it paces rendering to an even 60 fps on fast screens with a weak GPU and smooths the step.
 
 import { state } from './core/state.js';
 import { EVENTS, on, emit } from './core/events.js';
@@ -10,7 +11,8 @@ import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
 import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
-import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getCameraDebug } from './world/renderer.js';
+import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
+import { createFrameClock } from './core/frameclock.js';
 import { buildBarge, updateBarge, deckRoot, setOrientation } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer } from './play/player.js';
@@ -27,6 +29,7 @@ import TEXT from './content/text.js';
 const $ = (id) => document.getElementById(id);
 let portraitUrl = '';
 let lastSummary = null;
+let clock = null;       // frame pacing and a steady dt (core/frameclock.js)
 let runTuned = false;   // some tuning value differed from its default at any moment of this run: never ranked
 let playerKey = '';
 
@@ -45,6 +48,8 @@ function setScreen(screen) {
 // ---------------------------------------------------------------- boot
 async function boot() {
   const { scene, camera } = initRenderer($('scene'));
+  // a known weak GPU (Intel) on a fast screen is capped to an even 60 fps from the start; others only if frames miss the refresh budget
+  clock = createFrameClock({ forceCap: getGpuInfo().intel });
   initJuice({ scene, camera, popupRoot: $('popups-root') });
   initAudio({ musicUrl: './assets/music/loop.mp3' });
   initInput($('scene'), { onPause: togglePause, canPlay: () => state.screen === 'play', onJoystick: setJoystick });
@@ -140,6 +145,8 @@ async function startRun(mode) {
   resetJourney();
   fitDeckToScreen();
   hideScreens();
+  // Space must always dash during a run: a button that kept the focus (Play, Play again) must not swallow it
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   showHud(true);
   showTouchControls(isTouch());
   setCameraMode('play');
@@ -221,10 +228,13 @@ addEventListener('blur', () => { if (state.screen === 'play') pause(); });
 addEventListener('resize', () => { if (state.screen === 'start' || state.screen === 'over') fitDeckToScreen(); });
 
 // ---------------------------------------------------------------- loop
-let lastTs = performance.now();
+// Every requestAnimationFrame callback asks the clock whether to render: on a fast screen with a weak GPU it skips alternate
+// callbacks so the pictures arrive at an even 60 fps, and it hands over a steady dt (a short moving average of real steps).
 function frame(ts) {
-  const realDt = Math.min(0.05, (ts - lastTs) / 1000);
-  lastTs = ts;
+  requestAnimationFrame(frame);
+  const tick = clock.tick(ts);
+  if (!tick.render) return;
+  const realDt = tick.dt;
   const dt = realDt * timeScale();
 
   if (state.screen === 'play') {
@@ -247,7 +257,14 @@ function frame(ts) {
   updateJuice(realDt);
   updateAudio(realDt);
   renderFrame(realDt);
-  requestAnimationFrame(frame);
+  reportFrame(tick.intervalMs, ts);   // the quality manager (pixel ratio, particles)
+}
+
+// numbers for the ?debug panel
+function getPerf() {
+  const s = clock.stats();
+  const q = getQualityInfo();
+  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer };
 }
 
 // ---------------------------------------------------------------- debug (only with ?debug in the URL)
@@ -255,11 +272,13 @@ let botModule = null;
 let botDriving = false;
 if (location.search.includes('debug')) {
   import('./play/bot.js').then((m) => { botModule = m; });
-  import('./ui/tune.js').then((m) => m.initTune());   // the tuning panel: debug only, never downloaded by players
+  import('./ui/tune.js').then((m) => m.initTune({ getPerf }));   // the tuning panel: debug only, never downloaded by players
   window.__mango = {
     state,
     renderer: getRenderer,
+    scene: getScene,
     camera: getCameraDebug,
+    perf: getPerf,
     end() { if (state.screen === 'play') endRun('debug'); },
     dropLog: getDropLog,
     bot: {

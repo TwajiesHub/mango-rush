@@ -134,6 +134,12 @@ export function initJuice(opts) {
   subscribe();
 }
 
+// 1 = all particles; the renderer's quality manager lowers it (0.5) when the GPU cannot keep up
+let particleScale = 1;
+export function setParticleScale(s) {
+  particleScale = Math.max(0.1, Math.min(1, s));
+}
+
 export function setPlayerObject(obj) {
   playerObject = obj;
 }
@@ -180,6 +186,7 @@ function applySquash(q, t) {
 export function burst(p, color, count, speed = 4) {
   if (!mesh) return;
   tint.set(color);
+  count = count * particleScale < 1 ? Math.min(count, 1) : Math.round(count * particleScale);
   for (let n = 0; n < count; n++) {
     const i = cursor;
     cursor = (cursor + 1) % MAX_PARTICLES;

@@ -88,6 +88,7 @@ const TEXT = {
     aheadOfBest: '+{score} ahead of best',                   // max 26
     behindBest: '{score} to beat your best',                 // max 26
     dashReady: 'Dash ready',
+    dashReadyKey: 'Space · Dash ready',   // on desktop, where Space dashes
     lives: 'Lives',
   },
 

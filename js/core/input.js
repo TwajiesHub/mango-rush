@@ -31,8 +31,10 @@ export function initInput(canvas, h = {}) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === ' ' || k.startsWith('arrow')) {
-      // keep the page from scrolling, but let focused buttons keep their Space / Enter
-      if (!(e.target instanceof HTMLButtonElement)) e.preventDefault();
+      // keep the page from scrolling. A focused button keeps its Space / Enter everywhere EXCEPT during a run: then Space and the
+      // arrows are game keys and never click a button (the key still reaches the game below)
+      const inRun = handlers.canPlay ? handlers.canPlay() : false;
+      if (inRun || !(e.target instanceof HTMLButtonElement)) e.preventDefault();
     }
     if (e.repeat) return;
     if (k === 'escape' || k === 'p') { handlers.onPause?.(); return; }

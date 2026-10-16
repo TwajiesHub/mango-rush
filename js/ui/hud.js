@@ -64,6 +64,7 @@ import TEXT, { fill } from '../content/text.js';
 const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.2 4.3 2.4h2c.7-1.2 2.2-2.4 4.3-2.4 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>';
 
 let root = null;
+let isDesktop = true;   // Space dashes on desktop: the indicator says so
 let el = {};
 let actions = {};
 const last = {
@@ -75,6 +76,7 @@ let bannerTimer = 0;
 export function initHud(r, a) {
   root = r;
   actions = a;
+  try { isDesktop = !matchMedia('(pointer: coarse)').matches; } catch { isDesktop = true; }
   const hearts = Array.from({ length: CONFIG.lives }, () => `<span class="heart" role="img" aria-label="${TEXT.a11y.life}">${HEART}</span>`).join('');
   root.innerHTML = `
     <div class="hud__flash" aria-hidden="true"></div>
@@ -102,7 +104,7 @@ export function initHud(r, a) {
     <div class="hud__time"><span class="time__phase"></span><b class="time__clock">0:00</b></div>
     <div class="hud__banner" role="status" hidden></div>
     <div class="hud__bottom">
-      <div class="hud__dash" aria-hidden="true"><i></i><span class="dash__text"></span></div>
+      <button class="hud__dash" type="button" aria-label="${TEXT.a11y.dash}"><i></i><span class="dash__text"></span></button>
       <button class="hud__pause" type="button" aria-label="${TEXT.a11y.pause}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/></svg></button>
     </div>
     <div class="touch" hidden>
@@ -120,6 +122,9 @@ export function initHud(r, a) {
     touch: q('.touch'), joy: q('.touch__joy'), knob: q('.touch__joy i'),
   };
   q('.hud__pause').addEventListener('click', () => actions.onPause?.());
+  // the dash indicator is a real button: a click or tap dashes at once (and takes no focus, so Space stays a game key)
+  el.dash.addEventListener('pointerdown', (e) => { e.preventDefault(); actions.onDash?.(); });
+  el.dash.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); });   // keys dash through input.js, never click
   const dashBtn = q('.touch__dash');
   dashBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); actions.onDash?.(); });
   dashBtn.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -244,7 +249,7 @@ export function updateHud() {
     last.dash = dashPct;
     el.dashFill.style.width = `${dashPct * 5}%`;
     el.dash.classList.toggle('is-ready', dashPct >= 20);
-    el.dashText.textContent = dashPct >= 20 ? TEXT.hud.dashReady : '';
+    el.dashText.textContent = dashPct >= 20 ? (isDesktop ? TEXT.hud.dashReadyKey : TEXT.hud.dashReady) : '';
   }
   if (s.shield !== last.shield) { last.shield = s.shield; el.shield.hidden = !s.shield; }
 }

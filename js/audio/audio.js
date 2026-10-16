@@ -71,6 +71,27 @@ let musicOn = true;
 let musicUrl = '';
 let beatTimer = 0;
 
+// footsteps: ONE pre-rendered buffer (thump + soft tick), played through 3 gain nodes that are reused round-robin; at most one step
+// per 0.12 s, so fast running can never turn into a rattle and there is no per-step synthesis
+let footBuf = null;
+const footGains = [];
+let footI = 0;
+let lastStepAt = -1;
+
+function makeFootBuffer() {
+  const sr = ac.sampleRate;
+  const n = Math.floor(sr * 0.1);
+  footBuf = ac.createBuffer(1, n, sr);
+  const d = footBuf.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const thump = Math.sin(2 * Math.PI * (88 * t - 226 * t * t)) * Math.exp(-t * 48);   // 88 Hz sliding down to ~54 Hz
+    lp += ((Math.random() * 2 - 1) - lp) * 0.35;                                         // a soft, filtered noise tick
+    d[i] = thump * 0.8 + lp * Math.exp(-t * 150) * 0.28;
+  }
+}
+
 function detune() {
   return 1 + (Math.random() * 2 - 1) * CONFIG.audio.detune;
 }
@@ -157,10 +178,22 @@ export function initAudio({ musicUrl: url }) {
   // movement sounds (step 3): all synthesized, all quiet
   on(EVENTS.FOOTSTEP, (e) => {
     // a short low thump plus a soft filtered tick; louder with speed, +/- 5% pitch and volume, never annoying
+    if (!ready() || !footBuf) return;
+    const now = ac.currentTime;
+    if (now - lastStepAt < 0.12) return;
     const v = TUNE.stepVolume * Math.min(1.2, 0.35 + e.speed / 10) * (0.95 + Math.random() * 0.1);
     if (v <= 0.01) return;
-    tone(88, 0.075, 'sine', 0.07 * v, -34);
-    noise(0.035, 0.035 * v, 2200, 1400);
+    lastStepAt = now;
+    try {
+      const g = footGains[footI++ % footGains.length];
+      g.gain.setValueAtTime(0.2 * v, now);
+      const src = ac.createBufferSource();
+      src.buffer = footBuf;
+      src.playbackRate.value = 0.95 + Math.random() * 0.1;
+      src.connect(g);
+      src.onended = () => src.disconnect();
+      src.start(now);
+    } catch { /* audio must never break the game */ }
   });
   on(EVENTS.SKID, () => noise(0.14, 0.09, 3200, 1500));          // a short scrape
   on(EVENTS.SNAP_TURN, () => { noise(0.1, 0.07, 1400, 4200); tone(900, 0.07, 'sine', 0.03, 500); });   // a light fwip
@@ -202,6 +235,8 @@ export async function unlockAudio() {
       noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.5), ac.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      makeFootBuffer();
+      for (let i = 0; i < 3; i++) { const g = ac.createGain(); g.connect(master); footGains.push(g); }
     }
     if (ac.state !== 'running') await ac.resume();
   } catch { /* stays silent */ }

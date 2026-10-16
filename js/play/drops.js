@@ -30,14 +30,15 @@ import { fruitCaught, coconutLanded } from './scoring.js';
 import { getPlayer } from './player.js';
 import { deckBounds } from '../world/barge.js';
 import { burst } from '../fx/juice.js';
-import { blobShadow } from '../world/materials.js';
+import { blobShadow, mergeMeshes } from '../world/materials.js';
 
 const D = CONFIG.drops;
 const DEBUG = typeof location !== 'undefined' && location.search.includes('debug');
 const GROUND = { mango: 0.27, golden: 0.27, coconut: 0.33 };
 const MARKER_COLOR = { mango: '#fff1a8', golden: '#ffe066', coconut: '#e63946' };
 const BASE_COLOR = { mango: new THREE.Color('#ffb627'), golden: new THREE.Color('#ffd84d'), coconut: new THREE.Color('#5b3a1f') };
-const ROT_COLOR = new THREE.Color('#5a3d22');
+const WHITE = new THREE.Color(0xffffff);
+const ROT_TINT = new THREE.Color('#6e5a40');   // multiplies the painted colours: a landed mango goes browner and darker
 
 let scene = null;
 let rng = null;
@@ -62,6 +63,10 @@ const stemMat = new THREE.MeshStandardMaterial({ color: '#5a3d22', roughness: 0.
 const leafMat = new THREE.MeshStandardMaterial({ color: '#3f8f3a', roughness: 0.85 });
 const blushMat = new THREE.MeshStandardMaterial({ color: '#ff6b3d', roughness: 0.45 });
 const eyeMat = new THREE.MeshStandardMaterial({ color: '#22150b', roughness: 0.85 });
+
+// shared geometry and parts materials must survive when a slot's meshes are baked into one (see materials.mergeMeshes)
+for (const g of [mangoGeo, blushGeo, stemGeo, leafGeo, cocoGeo, eyeGeo, ringGeo, fillGeo]) g.userData.shared = true;
+for (const m of [stemMat, leafMat, blushMat, eyeMat]) m.userData.shared = true;
 
 function part(geo, mat, x, y, z, parent) {
   const m = new THREE.Mesh(geo, mat);
@@ -92,23 +97,36 @@ function makeBody(type) {
     leaf.scale.set(1.4, 0.25, 0.6);
     leaf.rotation.z = 0.5;
   }
-  return { group: g, bodyMat };
+  // one draw call per item instead of 2-4: the parts are baked into one geometry with vertex colours; the material colour is a
+  // tint (white = as painted) that the rot animation changes
+  const merged = new THREE.MeshStandardMaterial({
+    vertexColors: true, flatShading: bodyMat.flatShading, roughness: bodyMat.roughness, metalness: bodyMat.metalness,
+    emissive: bodyMat.emissive, emissiveIntensity: bodyMat.emissiveIntensity,
+  });
+  const mesh = mergeMeshes(g, g.children.slice(), merged);
+  bodyMat.dispose();
+  return { group: mesh, bodyMat: merged };
 }
 
 function makeSlot(type) {
   const { group, bodyMat } = makeBody(type);
   const marker = new THREE.Group();
-  const ringMat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR[type], transparent: true, opacity: 0.2, depthWrite: false });
-  const fillMat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR[type], transparent: true, opacity: 0.08, depthWrite: false });
-  marker.add(new THREE.Mesh(ringGeo, ringMat), new THREE.Mesh(fillGeo, fillMat));
-  marker.rotation.x = -Math.PI / 2;
+  // the warning ring and its fill are ONE mesh (the fill is the ring's colour at 40% alpha, in the vertex colours)
+  const ringTmp = new THREE.MeshBasicMaterial({ color: MARKER_COLOR[type], opacity: 0.2 });
+  const fillTmp = new THREE.MeshBasicMaterial({ color: MARKER_COLOR[type], opacity: 0.08 });
+  marker.add(new THREE.Mesh(ringGeo, ringTmp), new THREE.Mesh(fillGeo, fillTmp));
+  const markMat = new THREE.MeshBasicMaterial({ color: '#ffffff', vertexColors: true, transparent: true, opacity: 0.2, depthWrite: false });
+  const markMesh = mergeMeshes(marker, marker.children.slice(), markMat, { alpha: true });
+  ringTmp.dispose();
+  fillTmp.dispose();
+  markMesh.rotation.x = -Math.PI / 2;
   const shadow = blobShadow(0.5);
   group.visible = false;
-  marker.visible = false;
+  markMesh.visible = false;
   shadow.visible = false;
-  scene.add(group, marker, shadow);
+  scene.add(group, markMesh, shadow);
   return {
-    type, id: 0, mesh: group, marker, shadow, bodyMat, ringMat, fillMat,
+    type, id: 0, mesh: group, marker: markMesh, shadow, bodyMat, markMat,
     x: 0, z: 0, y: 0, age: 0, warn: 1, v0: 0, g: 0, landed: false, life: 0, spin: 0, caught: false,
   };
 }
@@ -152,15 +170,14 @@ function launch(type, x, z, warn) {
   it.caught = false;
   it.life = 0;
   it.spin = (Math.random() - 0.5) * 6;
-  it.bodyMat.color.copy(BASE_COLOR[type]);
+  it.bodyMat.color.set(0xffffff);   // white = as painted
   it.mesh.position.set(x, D.height, z);
   it.mesh.rotation.set(0, Math.random() * 6, 0);
   it.mesh.scale.setScalar(1);
   it.mesh.visible = true;
   it.marker.position.set(x, 0.03, z);
   it.marker.scale.setScalar(1.35);
-  it.ringMat.opacity = 0.2;
-  it.fillMat.opacity = 0.06;
+  it.markMat.opacity = 0.2;
   it.marker.visible = true;
   it.shadow.position.set(x, 0.012, z);
   it.shadow.scale.set(0.25, 1, 0.25);
@@ -306,8 +323,7 @@ export function updateDrops(dt) {
       it.mesh.rotation.y += it.spin * dt;
       it.mesh.rotation.x += it.spin * 0.5 * dt;
       const progress = Math.min(1, it.age / it.warn);
-      it.ringMat.opacity = 0.2 + 0.7 * progress;
-      it.fillMat.opacity = 0.06 + 0.3 * progress;
+      it.markMat.opacity = 0.2 + 0.7 * progress;   // (the fill follows at 40% of it, baked into the vertex alpha)
       it.marker.scale.setScalar(1.35 - 0.45 * progress);
       it.shadow.scale.set(0.25 + 0.3 * progress, 1, 0.25 + 0.3 * progress);
 
@@ -332,7 +348,7 @@ export function updateDrops(dt) {
         if (dist < CONFIG.catchRadius - 0.1) { catchIt(it, i); continue; }
         // landed mangoes blink, then rot (browner) until they vanish
         const rot = 1 - Math.max(0, it.life) / CONFIG.landedFruitLife;
-        it.bodyMat.color.lerpColors(BASE_COLOR[it.type], ROT_COLOR, rot * rot);
+        it.bodyMat.color.lerpColors(WHITE, ROT_TINT, rot * rot);
         it.mesh.visible = it.life > CONFIG.landedBlink || Math.floor(it.life * 8) % 2 === 0;
         it.mesh.rotation.y += dt * 1.5;
       } else if (it.life < 0.4) {

@@ -73,7 +73,7 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 
 /* pause + game over + leaderboard cards */
 .screen--pause, .screen--over, .screen--board { display: grid; place-items: center; padding: var(--gutter); box-sizing: border-box; }
-.screen--pause { background: rgba(43, 26, 16, 0.5); backdrop-filter: blur(3px); }
+.screen--pause { background: rgba(43, 26, 16, 0.55); }   /* no backdrop blur: it is very slow on weak GPUs */
 /* the 3D scene stays visible behind the card, dimmed (never a black page) */
 .screen--over { background: rgba(11, 11, 12, 0.5); opacity: 0; transition: opacity var(--t-med); }
 .screen--over.is-in { opacity: 1; }
@@ -119,7 +119,7 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 /* ---------------------------------------------------------------- HUD */
 #hud-root { --safe-t: env(safe-area-inset-top); --safe-l: env(safe-area-inset-left); --safe-r: env(safe-area-inset-right); --safe-b: env(safe-area-inset-bottom); }
 #hud-root > * { position: absolute; }
-.hud__flash { inset: 0; pointer-events: none; box-shadow: inset 0 0 120px 30px var(--vermilion-dark); opacity: 0; transition: opacity 350ms ease-out; }
+.hud__flash { will-change: opacity; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px 30px var(--vermilion-dark); opacity: 0; transition: opacity 350ms ease-out; }
 .hud__flash.is-on { opacity: 0.28; transition: none; }
 .hud__flash.is-white { box-shadow: inset 0 0 120px 30px var(--cream); }
 
@@ -161,7 +161,8 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 @keyframes slideDown { from { transform: translate(-50%, -16px); opacity: 0; } }
 
 .hud__bottom { right: calc(var(--gutter) + var(--safe-r)); bottom: calc(var(--gutter) + var(--safe-b)); display: flex; gap: 12px; align-items: center; }
-.hud__dash { position: relative; width: 120px; height: 36px; border-radius: 99px; background: var(--ink); border: 2px solid var(--ink); overflow: hidden; display: grid; place-items: center; color: var(--cream); font-size: 12px; font-weight: 800; }
+.hud__dash { position: relative; min-width: 176px; height: 44px; padding: 0 14px; border-radius: 99px; background: var(--ink); border: 2px solid var(--ink); overflow: hidden; display: grid; place-items: center; color: var(--cream); font: 800 12px var(--font-body); letter-spacing: 0.06em; cursor: pointer; pointer-events: auto; }
+.hud__dash:active { transform: scale(0.97); }
 .hud__dash i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--paper-dark); }
 .hud__dash.is-ready i { background: var(--saffron); }
 .hud__dash.is-ready { color: var(--ink); }
@@ -197,7 +198,7 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 .popup--big { font-size: 48px; color: var(--gold); }
 
 /* ---------------------------------------------------------------- adrenaline states */
-body.is-heartbeat::after, body.is-madness::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+body.is-heartbeat::after, body.is-madness::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 2; will-change: opacity; }
 body.is-heartbeat::after { box-shadow: inset 0 0 140px 20px var(--vermilion-dark); animation: beat 0.85s ease-in-out infinite; }
 body.is-madness::after { box-shadow: inset 0 0 120px 10px var(--gold); opacity: 0.45; }
 body.is-madness .hud__combo { box-shadow: 0 0 18px var(--gold); }

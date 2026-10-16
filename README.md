@@ -12,7 +12,7 @@ py -m http.server 8000
 ```
 
 Open http://localhost:8000. Off start.ng there is no sign-in, so after about 4 s the game continues as a guest.
-Add `?debug` to the URL for test hooks: `window.__mango` (state, `end()`, the camera and renderer), `window.__mangoTest.scoring()`, the **tuning panel** (T key, or the TUNE tab: live sliders for movement, dash, body springs, camera and footsteps; Copy values / Reset; the G key toggles a slippery test patch; while any value differs from its default the run is not saved to the leaderboard), the first drops of each run in the console, and a small autoplay bot / headless simulator for balancing (`window.__mango.bot`, see `js/play/bot.js`). `node tests/motion.test.mjs` checks the maths helpers in `js/core/motion.js`.
+Add `?debug` to the URL for test hooks: `window.__mango` (state, `end()`, the camera and renderer), `window.__mangoTest.scoring()`, the **tuning panel** (T key, or the TUNE tab: live sliders for movement, dash, body springs, camera and footsteps; Copy values / Reset; the G key toggles a slippery test patch; while any value differs from its default the run is not saved to the leaderboard), the first drops of each run in the console, and a small autoplay bot / headless simulator for balancing (`window.__mango.bot`, see `js/play/bot.js`). `node tests/motion.test.mjs` and `node tests/frameclock.test.mjs` check the pure-logic helpers (`js/core/motion.js`, `js/core/frameclock.js`). The debug panel also shows fps, frame times, the refresh rate, the fps cap, antialias and the pixel ratio.
 
 ## Controls
 

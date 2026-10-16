@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
-import { flat, blobShadow } from './materials.js';
+import { flat, blobShadow, mergeFlatProps } from './materials.js';
 
 const D = CONFIG.deck;
 const DEG = Math.PI / 180;
@@ -212,6 +212,7 @@ function buildArt() {
       box(post, 0.4, 0.46, 0.4, COLORS.lamp, 0, 2.05, 0);
       const glass = box(post, 0.3, 0.32, 0.42, COLORS.lampGlass, 0, 2.05, 0);
       glass.name = 'lantern-glass';
+      glass.userData.keep = true;
       box(post, 0.46, 0.07, 0.46, COLORS.post, 0, 2.32, 0);
       post.add(blobShadow(0.45, 0.35));
       art.add(post);
@@ -245,6 +246,10 @@ function buildArt() {
     sack.add(blobShadow(0.62 * s, 0.55 * s));
     art.add(sack);
   }
+
+  // the props are many small flat-painted boxes: bake them (and their blob shadows) into two meshes; the lantern glass stays apart
+  // because step 6 lights it at dusk
+  mergeFlatProps(art);
 
   // walkable ellipse for this orientation
   bounds.halfWidth = hw - D.walkMargin;

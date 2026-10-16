@@ -8,6 +8,9 @@
 //   isPortraitScreen() -> boolean             the screen is taller than wide (phones held upright)
 //   menuStand() -> { x, z }                   where the character stands on the start screen (deck-local)
 //   getRenderer() / getCameraDebug()          for ?debug measurements
+//   getGpuInfo() -> { renderer, intel }       the GPU's own name (WEBGL_debug_renderer_info; empty if the browser hides it)
+//   getQualityInfo() -> { antialias, pixelRatio, level, levels, particleScale }
+//   reportFrame(intervalMs, nowMs)            main.js calls it after every rendered frame: the QUALITY MANAGER (see below)
 //
 // PLAY CAMERA. A normal tilted camera (no lens shift) that looks at the deck from CONFIG.camera.elevationDeg. On every
 // resize, and whenever the deck's orientation changes, it is FITTED: the smallest distance at which the whole walkable
@@ -24,12 +27,19 @@
 // OVER CAMERA. The play pose, a little higher and further back, drifting slowly.
 // Moving between modes is a spring glide on position, tilt and lens shift. Camera shake from juice.cameraShake()
 // (x, y, roll) applies in every mode. No real-time shadow maps. Pixel ratio is capped (CONFIG.quality).
+//
+// ANTIALIAS is decided once, at startup (a WebGL context cannot change it later): OFF when devicePixelRatio >= 1.5 (the picture is
+// dense enough already) or when the GPU is an Intel one (MSAA is slow there), ON otherwise.
+// QUALITY MANAGER. If the average frame time stays above the budget for about 1 s the pixel ratio steps down (cap -> 1.25 -> 1.0),
+// then the particle count is halved. It steps back up one level only after 5 s well under the budget, and never flips back and
+// forth: after a step down it waits 10 s before any step up, and a step down soon after a step up doubles that wait. In ?debug every
+// step is logged. The water is the clear colour, not a mesh (a full-screen plane cost a whole extra pass).
 
 import * as THREE from 'three';
 import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { springStep } from '../core/motion.js';
-import { cameraShake } from '../fx/juice.js';
+import { cameraShake, setParticleScale } from '../fx/juice.js';
 import { deckBounds, deckSize } from './barge.js';
 import { syncBackdrop } from './journey.js';
 
@@ -63,6 +73,10 @@ export function getRenderer() {
   return ctx.renderer;
 }
 
+export function getScene() {   // ?debug: counting draw calls by part
+  return ctx.scene;
+}
+
 // for ?debug: where a deck-local point is on screen right now (ndc, -1..1)
 export function debugProject(x, y, z) {
   const v = new THREE.Vector3(x, y, z).project(ctx.camera);
@@ -84,14 +98,105 @@ export function getCameraDebug() {
   };
 }
 
+// ---------------------------------------------------------------- GPU and quality
+const DEBUG = typeof location !== 'undefined' && location.search.includes('debug');
+let gpu = { renderer: '', intel: false };
+let antialias = true;
+
+// the GPU's own name, from a throwaway context (the extension may be missing or blocked: then we just do not know)
+function probeGpu() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') : '';
+    gpu = { renderer: name, intel: /intel/i.test(name) };
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+  } catch { /* unknown GPU: keep the defaults */ }
+}
+
+export function getGpuInfo() {
+  return gpu;
+}
+
+const basePixelRatio = () => Math.min(devicePixelRatio, CONFIG.quality.maxPixelRatio);
+let levels = [];            // { pr, particles }
+let level = 0;
+let pixelRatio = 1;
+const Q = { startAt: 0, winStart: 0, winSum: 0, winN: 0, okFor: 0, upAllowedAt: 0, downAllowedAt: 0, upBlock: 10000, lastUpAt: -1e9, ignoreUntil: 0 };
+
+function buildLevels() {
+  const base = basePixelRatio();
+  const prs = [base];
+  for (const p of [1.25, 1.0]) if (p < prs[prs.length - 1] - 0.01) prs.push(p);
+  levels = prs.map((pr) => ({ pr, particles: 1 }));
+  levels.push({ pr: prs[prs.length - 1], particles: 0.5 });
+}
+
+function applyLevel(n, now) {
+  level = n;
+  pixelRatio = levels[n].pr;
+  ctx.renderer.setPixelRatio(pixelRatio);
+  ctx.renderer.setSize(innerWidth, innerHeight, false);
+  setParticleScale(levels[n].particles);
+  Q.winStart = now;
+  Q.winSum = Q.winN = 0;
+  Q.okFor = 0;
+  Q.ignoreUntil = now + 1000;      // the first frames after a change are not representative
+}
+
+export function getQualityInfo() {
+  return { antialias, pixelRatio, level, levels: levels.length, particleScale: levels[level] ? levels[level].particles : 1 };
+}
+
+// called after every RENDERED frame with the real interval since the previous one
+export function reportFrame(intervalMs, now) {
+  if (!levels.length || intervalMs <= 0 || intervalMs > 250) return;   // (a long gap is a hidden tab, not a slow GPU)
+  if (!Q.startAt) { Q.startAt = now; Q.winStart = now; Q.ignoreUntil = now + 3000; }   // shaders compile in the first seconds
+  if (now < Q.ignoreUntil) { Q.winStart = now; Q.winSum = Q.winN = 0; return; }
+  Q.winSum += intervalMs;
+  Q.winN++;
+  if (now - Q.winStart < 1000) return;
+  const avg = Q.winSum / Q.winN;
+  const budget = 1000 / 60 * 1.2;      // 20 ms: a steady 60 fps, with some slack
+  Q.winStart = now;
+  Q.winSum = Q.winN = 0;
+  if (avg > budget) {
+    Q.okFor = 0;
+    if (level < levels.length - 1 && now >= Q.downAllowedAt) {
+      if (now - Q.lastUpAt < 10000) Q.upBlock = Math.min(120000, Q.upBlock * 2);   // we stepped up and it did not hold: wait longer
+      applyLevel(level + 1, now);
+      Q.upAllowedAt = now + Q.upBlock;
+      Q.downAllowedAt = now + 1500;
+      if (DEBUG) console.log(`[quality] step down -> level ${level} (pixel ratio ${pixelRatio}, particles x${levels[level].particles}) after ${avg.toFixed(1)} ms average frames`);
+    }
+  } else if (avg < budget * 0.7) {
+    Q.okFor += 1000;
+    if (Q.okFor >= 5000 && level > 0 && now >= Q.upAllowedAt) {
+      applyLevel(level - 1, now);
+      Q.lastUpAt = now;
+      Q.downAllowedAt = now + 1500;
+      if (DEBUG) console.log(`[quality] step up -> level ${level} (pixel ratio ${pixelRatio}, particles x${levels[level].particles}) after ${avg.toFixed(1)} ms average frames`);
+    }
+  } else {
+    Q.okFor = 0;
+  }
+}
+
 export function initRenderer(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, CONFIG.quality.maxPixelRatio));
+  probeGpu();
+  antialias = !(devicePixelRatio >= 1.5 || gpu.intel);
+  if (DEBUG) console.log(`[renderer] GPU "${gpu.renderer || 'unknown'}", devicePixelRatio ${devicePixelRatio}, antialias ${antialias ? 'on' : 'off'}`);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias, powerPreference: 'high-performance' });
+  buildLevels();
+  pixelRatio = levels[0].pr;
+  renderer.setPixelRatio(pixelRatio);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.localClippingEnabled = true;   // the backdrop is clipped at the horizon line
-  renderer.setClearColor('#D9472F');
+  renderer.setClearColor('#1FA39A');   // the water (see journey.js): below the horizon there is nothing else to draw
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(C.fov, 1, 0.5, 6000);

@@ -8,18 +8,18 @@
 //   getFarBank() -> Group   the far bank (green strip, stilt houses, palms, canoe) as its own group. Step 6 scrolls it sideways.
 //   Step 6 will also emit PLACE_ENTER as places pass.
 //
-// WHERE THE HORIZON IS. Every frame the real horizon is found by PROJECTING two far points on the water plane with the final
+// WHERE THE HORIZON IS. Every frame the real horizon is found by PROJECTING two far points on the (imagined) water plane at CONFIG.deck.waterY with the final
 // camera (so a lens shift, tilt, follow, shake and roll are all included). That gives a line on the screen: a height and a
 // slope. The backdrop hangs on the camera and is laid out relative to THAT line, in screen-height units:
 //   - menu camera (looks almost level): the real horizon is on screen, the backdrop sits exactly on it, and below it is the
-//     real water plane;
+//     clear colour, which is the water;
 //   - play / over camera (tilted steeply): the real horizon is far above the top of the screen, so the line is clamped to
 //     playLineNdc: the sky, sun and bank are painted as a window over the top of the screen, and below the line it is the
 //     same flat water, so there is no seam;
 //   - in between (the camera gliding from one pose to the other) the line follows min(real horizon, playLine), so it moves
 //     smoothly.
 // The sky, sun and bank are clipped by a plane through the camera and that line, so nothing paints below it.
-// Draw order (renderOrder, no depth test): water, barge water streaks, sky, sun, sun reflections, far bank. Everything here
+// Draw order (renderOrder, no depth test): barge water streaks, sky, sun, sun reflections, far bank. Everything here
 // is OPAQUE (the sun uses alpha test): three draws transparent things after all opaque ones, which would paint them over
 // the deck and the character.
 // Light: a warm hemisphere light plus a low sun from behind-left. No shadow maps (blob shadows come from materials.js).
@@ -30,11 +30,12 @@ import { flat } from './materials.js';
 
 const DEG = Math.PI / 180;
 const RIG_DIST = 400;                 // how far in front of the camera the backdrop hangs (it has no depth effect)
-const ORDER = { water: -10, sky: -9, sun: -8, streaks: -7, bank: -6 };
+// The water is NOT a mesh any more: the renderer clears to the water colour, so below the horizon there is nothing to draw
+// (step 3b: a full-screen plane cost a whole extra pass over every pixel on weak GPUs).
+const ORDER = { sky: -9, sun: -8, streaks: -7, bank: -6 };
 
 let rig = null;                       // child of the camera, placed on the horizon line, 1 unit = half the screen height
 let farBank = null;
-let waterMesh = null;
 let sunMesh = null;
 let streaks = null;
 let aspectDone = -1;
@@ -219,13 +220,6 @@ export function buildJourney(scene) {
   rig = new THREE.Group();
   camera.add(rig);
 
-  // water: one flat teal plane around the camera, drawn first
-  const wg = new THREE.PlaneGeometry(12000, 12000);
-  wg.rotateX(-Math.PI / 2);
-  waterMesh = backdrop(new THREE.Mesh(wg, flat('#1FA39A')), ORDER.water, false);
-  waterMesh.position.y = CONFIG.deck.waterY;
-  scene.add(waterMesh);
-
   // sky
   const sky = backdrop(new THREE.Mesh(new THREE.PlaneGeometry(12, SKY_H), flat('#ffffff', { map: skyTexture() })), ORDER.sky, true);
   sky.position.set(0, SKY_H / 2, 0);
@@ -263,8 +257,6 @@ export function updateJourney(dt) {
 // ---------------------------------------------------------------- align with the horizon
 export function syncBackdrop(camera, playLineNdc = 0.5) {
   const p = camera.position;
-  waterMesh.position.x = p.x;
-  waterMesh.position.z = p.z;
 
   // the real horizon on screen: project two far points of the water plane with the final camera
   const far = 40000;
