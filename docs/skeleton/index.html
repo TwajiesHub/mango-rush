@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#E4573D" />
+  <meta name="description" content="Mango Rush: ride the mango barge down the Lagos lagoon. Catch mangoes, dodge coconuts, last until midnight. A start.ng game." />
+  <title>Mango Rush</title>
+  <link rel="stylesheet" href="./css/tokens.css" />
+  <link rel="stylesheet" href="./css/ui.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="Mango Rush game"></canvas>
+  <div id="ui">
+    <div id="popups-root"></div>
+    <div id="hud-root" hidden></div>
+    <div id="screens-root"></div>
+  </div>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

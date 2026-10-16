@@ -1,0 +1,43 @@
+/* Mango Rush — design tokens (Golden Hour Print).  OWNER: Claude Code · STATUS: done
+   Use these variables everywhere; never hard-code colours in ui.css. */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Cormorant+Garamond:wght@500;600&display=swap');
+
+:root {
+  /* palette */
+  --paper: #D9A85B;        /* ochre paper: panels, cards */
+  --paper-light: #E6BE7A;
+  --paper-dark: #B8873E;   /* woven border checks */
+  --ink: #2B1A10;          /* burnt umber: text, outlines, dark chips */
+  --vermilion: #E4573D;    /* sky, print-offset shadow */
+  --vermilion-dark: #C8432E; /* danger, NEW BEST stamp */
+  --saffron: #F2A93B;      /* sun, mangoes, accents, primary button text */
+  --gold: #FFD84D;         /* golden mango, madness */
+  --teal: #1FA39A;         /* water */
+  --green: #0F3D2E;        /* palms, night pattern */
+  --green-2: #123D2F;
+  --night: #0B0B0C;        /* late game, game over */
+  --cream: #FFF1D6;        /* text on dark */
+  --dusk: #8E3A4E;
+  --night-bar: #1B2A3A;
+
+  /* type */
+  --font-display: 'Archivo', system-ui, sans-serif;   /* weights 800-900, font-stretch 112% for headlines/numbers */
+  --font-body: 'Archivo', system-ui, sans-serif;      /* 400-600 */
+  --font-ceremony: 'Cormorant Garamond', Georgia, serif; /* 600, uppercase, letter-spacing 0.42em */
+  --label-size: 11px;      /* tracked capital labels, letter-spacing 0.24em, weight 800 */
+
+  /* shape + motion */
+  --radius: 4px;           /* buttons */
+  --radius-card: 6px;
+  --border: 2px solid var(--ink);
+  --print-shadow: 6px 6px 0 var(--vermilion);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-fast: 140ms;
+  --t-med: 280ms;
+
+  /* layout */
+  --gutter: 16px;
+  --panel-width: 600px;    /* desktop start panel */
+  --touch-min: 44px;
+}
