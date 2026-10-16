@@ -1,0 +1,9 @@
+{
+  "leaderboard": {
+    "stats": [
+      { "key": "score", "label": "Score", "order": "highest" },
+      { "key": "survived", "label": "Survived", "order": "highest", "format": "time" },
+      { "key": "mangoes", "label": "Mangoes caught", "order": "highest" }
+    ]
+  }
+}
