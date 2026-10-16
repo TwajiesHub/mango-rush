@@ -39,7 +39,11 @@
 //                                   (shielded: a hollow wooden knock instead, no duck)
 //   EVENTS.NEAR_MISS                quick high ping
 //   EVENTS.PERFECT_DODGE            slow "whoomp" swell (pitch down then up over 0.3 s)
-//   EVENTS.DASH                     short noise whoosh (bandpass sweep 400 -> 1200 Hz)
+//   EVENTS.DASH                     short noise whoosh (bandpass sweep 400 -> 1200 Hz), on the frame of the press
+//   EVENTS.FOOTSTEP                 (step 3) a short low thump + a soft filtered tick; louder with speed, +/- 5% pitch and volume,
+//                                   scaled by TUNE.stepVolume; quiet on purpose
+//   EVENTS.SKID                     (step 3) a short scrape (filtered noise)
+//   EVENTS.SNAP_TURN                (step 3) a light "fwip" (rising filtered noise + a soft blip)
 //   EVENTS.COMBO_CHANGE stepUp      rising two-note blip
 //   EVENTS.MADNESS_START            short drum-roll fill
 //   EVENTS.HAPPENING_WARN           one beat of near-silence: music gain to -24 dB for 0.25 s, then back
@@ -51,7 +55,7 @@
 // Keep total generated node count low (disconnect nodes when done). No setInterval; time sounds with
 // AudioContext.currentTime.
 
-import { CONFIG } from '../core/config.js';
+import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on } from '../core/events.js';
 
@@ -150,6 +154,16 @@ export function initAudio({ musicUrl: url }) {
       tone(220, 0.35, 'sawtooth', 0.12, -150);
     }
   });
+  // movement sounds (step 3): all synthesized, all quiet
+  on(EVENTS.FOOTSTEP, (e) => {
+    // a short low thump plus a soft filtered tick; louder with speed, +/- 5% pitch and volume, never annoying
+    const v = TUNE.stepVolume * Math.min(1.2, 0.35 + e.speed / 10) * (0.95 + Math.random() * 0.1);
+    if (v <= 0.01) return;
+    tone(88, 0.075, 'sine', 0.07 * v, -34);
+    noise(0.035, 0.035 * v, 2200, 1400);
+  });
+  on(EVENTS.SKID, () => noise(0.14, 0.09, 3200, 1500));          // a short scrape
+  on(EVENTS.SNAP_TURN, () => { noise(0.1, 0.07, 1400, 4200); tone(900, 0.07, 'sine', 0.03, 500); });   // a light fwip
   on(EVENTS.NEAR_MISS, () => tone(1500, 0.1, 'sine', 0.1, 400));
   on(EVENTS.PERFECT_DODGE, () => {
     tone(260, 0.16, 'sine', 0.2, -120);

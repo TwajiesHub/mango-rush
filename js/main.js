@@ -5,7 +5,7 @@
 
 import { state } from './core/state.js';
 import { EVENTS, on, emit } from './core/events.js';
-import { CONFIG, phaseAt } from './core/config.js';
+import { CONFIG, phaseAt, tuneIsChanged } from './core/config.js';
 import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
 import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
@@ -27,6 +27,7 @@ import TEXT from './content/text.js';
 const $ = (id) => document.getElementById(id);
 let portraitUrl = '';
 let lastSummary = null;
+let runTuned = false;   // some tuning value differed from its default at any moment of this run: never ranked
 let playerKey = '';
 
 // push the saved settings into the systems that act on them
@@ -127,6 +128,7 @@ async function startRun(mode) {
   // never let audio hold the run back: a browser may leave resume() pending until a real gesture
   await Promise.race([unlockAudio(), new Promise((r) => setTimeout(r, 300))]);
   state.mode = mode;
+  runTuned = tuneIsChanged();
   const seed = mode === 'daily' ? dailySeed() : randomSeed();
   const rng = createRng(seed);
   state.time = 0;
@@ -177,7 +179,10 @@ on(EVENTS.RUN_END, (summary) => {
   showGameOver(summary, { player: state.player, portraitUrl, dailyLabel: dailyLabel() });
   lastRank = null;
   if (state.player.signedIn) {
-    saveScore({ score: summary.score, survived: Math.floor(summary.timeSurvived), mangoes: summary.mangoes }).then((saved) => {
+    if (runTuned) {
+      // a run played with tuned values is never saved to the leaderboard (also on the beta)
+      emit(EVENTS.LEADERBOARD_SAVED, { ok: false, error: 'tuned' });
+    } else saveScore({ score: summary.score, survived: Math.floor(summary.timeSurvived), mangoes: summary.mangoes }).then((saved) => {
       const r = saved?.ok && saved.result ? saved.result : null;
       lastRank = r?.rank ?? null;
       emit(EVENTS.LEADERBOARD_SAVED, r ? { ok: true, rank: r.rank, best: r.best, improved: r.improved }
@@ -226,6 +231,7 @@ function frame(ts) {
     state.time += dt;
     const phase = phaseAt(state.time);
     if (phase !== state.phase) { state.phase = phase; emit(EVENTS.PHASE_CHANGE, { phase }); }
+    if (tuneIsChanged()) runTuned = true;
     const input = readInput();
     input.dash = takeDash();
     if (botDriving && botModule) Object.assign(input, botModule.think());
@@ -249,6 +255,7 @@ let botModule = null;
 let botDriving = false;
 if (location.search.includes('debug')) {
   import('./play/bot.js').then((m) => { botModule = m; });
+  import('./ui/tune.js').then((m) => m.initTune());   // the tuning panel: debug only, never downloaded by players
   window.__mango = {
     state,
     renderer: getRenderer,

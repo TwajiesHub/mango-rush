@@ -7,6 +7,9 @@
 //                                 z toward the camera, y up, the deck top is y = 0, the centre is (0, 0).
 //   deckBounds() -> { halfWidth, halfDepth }   the walkable ellipse (the deck minus CONFIG.deck.walkMargin). Props stay OUTSIDE it.
 //   deckSize() -> { width, depth, orientation }   the deck as built right now
+//   surfaceAt(x, z) -> { grip }   how grippy the deck is at a deck-local point: 1 = normal, 0 = ice. The SAME object every call.
+//                                 It is 1 everywhere for now; steps 5 and 6 add juice splats and wet edges through this hook.
+//                                 With ?debug, the G key toggles a test patch (3 units wide at the deck centre, grip 0.35).
 //   setOrientation('landscape' | 'portrait')   landscape: width along the screen. portrait: width and depth swap so the long
 //                                 side runs into the screen (phones). REBUILDS the deck art (disposing the old one) and is
 //                                 ignored while a run is on (play / paused): main.js calls it between runs only.
@@ -314,6 +317,31 @@ export function buildBarge(s) {
   deck = new THREE.Group();
   bobRoot.add(deck);
   buildArt();
+  if (location.search.includes('debug')) initTestPatch();
+}
+
+// ---- the slippery-surface hook
+const gripOut = { grip: 1 };
+const testPatch = { on: false, x: 0, z: 0, r: 3, grip: 0.35, mesh: null };
+
+function initTestPatch() {
+  const geo = new THREE.CircleGeometry(testPatch.r, 40);
+  geo.rotateX(-Math.PI / 2);
+  testPatch.mesh = new THREE.Mesh(geo, flat('#9FE3F2', { transparent: true, opacity: 0.4, depthWrite: false }));
+  testPatch.mesh.position.set(testPatch.x, 0.03, testPatch.z);
+  testPatch.mesh.visible = false;
+  deck.add(testPatch.mesh);
+  addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'g' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    testPatch.on = !testPatch.on;
+    testPatch.mesh.visible = testPatch.on;
+  });
+}
+
+export function surfaceAt(x, z) {
+  gripOut.grip = 1;
+  if (testPatch.on && Math.hypot(x - testPatch.x, z - testPatch.z) <= testPatch.r) gripOut.grip = testPatch.grip;
+  return gripOut;
 }
 
 export function setOrientation(o) {

@@ -5,7 +5,7 @@
 //     onPause()                  Esc or P was pressed
 //     canPlay() -> boolean       true while a run is being played (the joystick only wakes up then). Optional.
 //     onJoystick(j) -> void      { active, x, y, dx, dy } for the HUD's floating joystick (hud.js setJoystick). Optional.
-//   readInput() -> { x, z, dash }  x,z -1..1, length <= 1. The SAME object every call (no allocation); main.js sets .dash from takeDash().
+//   readInput() -> { x, z, dash, analog }  x,z -1..1, length <= 1. The SAME object every call (no allocation); main.js sets .dash from takeDash().
 //   takeDash() -> boolean        true once per dash request (Space, or queueDash() from the touch button)
 //   queueDash() -> void          the on-screen DASH button calls this
 //   isTouch() -> boolean
@@ -18,7 +18,7 @@ const DEAD_ZONE = 0.1;
 const DASH_BUFFER_MS = 150; // a dash request stays valid this long
 
 const keys = new Set();
-const out = { x: 0, z: 0, dash: false };
+const out = { x: 0, z: 0, dash: false, analog: false };
 const stick = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 const joy = { active: false, x: 0, y: 0, dx: 0, dy: 0 };
 let dashAt = -1e9;
@@ -100,11 +100,13 @@ export function readInput() {
   if (keys.has('d') || keys.has('arrowright')) ix += 1;
   if (keys.has('w') || keys.has('arrowup')) iz -= 1;
   if (keys.has('s') || keys.has('arrowdown')) iz += 1;
-  if (stick.active && Math.hypot(stick.x, stick.y) > DEAD_ZONE) { ix += stick.x; iz += stick.y; }
+  const stickOn = stick.active && Math.hypot(stick.x, stick.y) > DEAD_ZONE;
+  if (stickOn) { ix += stick.x; iz += stick.y; }
   const len = Math.hypot(ix, iz);
   if (len > 1) { ix /= len; iz /= len; }
   out.x = ix;
   out.z = iz;
+  out.analog = stickOn;   // the joystick is analogue: player.js smooths it less than the keys
   return out;
 }
 

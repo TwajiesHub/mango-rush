@@ -1,7 +1,17 @@
-// Builds the player's three.js character from their start.ng style.
+// Builds the player's three.js character from their start.ng style, and animates it (step 3: a living body).
+//   buildCharacter(style, name) -> Group      thigh + shin with a knee, upper arm + forearm with an elbow; hair locks, ponytail, scarf tail
+//                                              and backpack hang from pivots so they can lag; afro and bun can jiggle
+//   updateCharacterMotion(ch, dt, { vx, vz, ax, az, dashing, skidding }) -> 0|1
+//        stride by DISTANCE (TUNE.stride per step, so feet do not skate), knees and elbows bend, lean toward the acceleration,
+//        trailing parts on springs; returns 1 on the frame a foot plants (player.js turns that into EVENTS.FOOTSTEP)
+//   animateCharacter(ch, dt, speed, time)    the menu and game-over poses (the same animation at a share of top speed)
+//   disposeCharacter(ch)
+// Numbers come from TUNE (core/config.js). No allocation per frame.
 // Every option from the start.ng character creator changes the model:
 // body, skin, hair, hair colour, top (primaryColor), bottoms (secondaryColor), hat, extra (accessory).
 import * as THREE from 'three';
+import { springStep } from '../core/motion.js';
+import { TUNE } from '../core/config.js';
 
 const mats = new Map();
 function mat(color, opts = {}) {
@@ -45,16 +55,23 @@ export function buildCharacter(style, name) {
   const shoe = mat('#26211d');
   const dark = mat('#14110f', { roughness: 0.4 });
 
-  // ---- legs (pivot at the hip so they can swing)
+  // ---- legs: a thigh that swings at the hip and a shin that bends at the knee
   const legs = [];
+  const knees = [];
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(side * 0.14, 0.72, 0);
-    const leg = mesh(new THREE.CylinderGeometry(0.105, 0.095, 0.62, 12), bottoms, 0, -0.31, 0);
-    const foot = mesh(new THREE.BoxGeometry(0.2, 0.12, 0.32), shoe, 0, -0.62, 0.05);
-    pivot.add(leg, foot);
+    const thigh = mesh(new THREE.CylinderGeometry(0.105, 0.1, 0.31, 12), bottoms, 0, -0.155, 0);
+    const knee = new THREE.Group();
+    knee.position.y = -0.31;
+    const shin = mesh(new THREE.CylinderGeometry(0.1, 0.095, 0.31, 12), bottoms, 0, -0.155, 0);
+    const kneeCap = mesh(new THREE.SphereGeometry(0.1, 10, 8), bottoms, 0, 0, 0);
+    const foot = mesh(new THREE.BoxGeometry(0.2, 0.12, 0.32), shoe, 0, -0.31, 0.05);
+    knee.add(shin, kneeCap, foot);
+    pivot.add(thigh, knee);
     body.add(pivot);
     legs.push(pivot);
+    knees.push(knee);
   }
 
   // ---- torso
@@ -79,19 +96,24 @@ export function buildCharacter(style, name) {
   // neck
   body.add(mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.14, 12), skin, 0, 1.55, 0));
 
-  // ---- arms (pivot at shoulder)
+  // ---- arms: an upper arm that swings at the shoulder and a forearm that bends at the elbow
   const arms = [];
+  const elbows = [];
   const shoulderX = female ? 0.36 : 0.42;
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(side * shoulderX, 1.45, 0);
     pivot.rotation.z = side * 0.08;
-    const sleeve = mesh(new THREE.CylinderGeometry(0.1, 0.095, 0.3, 12), top, 0, -0.13, 0);
-    const forearm = mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.3, 12), skin, 0, -0.42, 0);
-    const hand = mesh(new THREE.SphereGeometry(0.085, 12, 10), skin, 0, -0.6, 0);
-    pivot.add(sleeve, forearm, hand);
+    const sleeve = mesh(new THREE.CylinderGeometry(0.1, 0.095, 0.28, 12), top, 0, -0.13, 0);
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.28;
+    const forearm = mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.3, 12), skin, 0, -0.14, 0);
+    const hand = mesh(new THREE.SphereGeometry(0.085, 12, 10), skin, 0, -0.32, 0);
+    elbow.add(forearm, hand);
+    pivot.add(sleeve, elbow);
     body.add(pivot);
     arms.push(pivot);
+    elbows.push(elbow);
   }
 
   // ---- head
@@ -108,6 +130,9 @@ export function buildCharacter(style, name) {
   head.add(mouth);
 
   // ---- hair
+  // 'trail' holds the parts that lag behind the body on springs: { obj, set, gain, baseX, baseZ } (swing about a pivot at
+  // the top of the part) or { obj, set, gain, jiggle: true, x0, y0, z0 } (a small offset). set 0 = hair and scarf, set 1 = backpack.
+  const trail = [];
   let hatBase = HEAD_R - 0.02;
   const hairKind = ['short', 'afro', 'braids', 'bun', 'ponytail', 'dreads', 'bald'].includes(s.hair) ? s.hair : 'short';
   const hairCap = (span) => {
@@ -119,18 +144,26 @@ export function buildCharacter(style, name) {
     hairCap(female ? 0.55 : 0.42);
   } else if (hairKind === 'bun') {
     hairCap(0.5);
-    head.add(mesh(new THREE.SphereGeometry(0.15, 16, 12), hair, 0, 0.24, -0.24));
+    const bun = mesh(new THREE.SphereGeometry(0.15, 16, 12), hair, 0, 0.24, -0.24);
+    head.add(bun);
+    trail.push({ obj: bun, set: 0, gain: 0.16, jiggle: true, x0: 0, y0: 0.24, z0: -0.24 });
   } else if (hairKind === 'ponytail') {
     hairCap(0.5);
     head.add(mesh(new THREE.SphereGeometry(0.07, 10, 8), hair, 0, 0.1, -0.32));
-    const tail = mesh(new THREE.CylinderGeometry(0.075, 0.035, 0.46, 10), hair, 0, -0.1, -0.4);
-    tail.rotation.x = 0.35;
+    // the tail hangs from a pivot at its top, so it swings from the head
+    const tailPivot = new THREE.Group();
+    tailPivot.position.set(0, 0.12, -0.38);
+    tailPivot.rotation.x = 0.35;
+    const tail = mesh(new THREE.CylinderGeometry(0.075, 0.035, 0.46, 10), hair, 0, -0.23, 0);
     tail.add(mesh(new THREE.SphereGeometry(0.035, 8, 6), hair, 0, -0.23, 0));
-    head.add(tail);
+    tailPivot.add(tail);
+    head.add(tailPivot);
+    trail.push({ obj: tailPivot, set: 0, gain: 1.1, baseX: 0.35, baseZ: 0 });
   } else if (hairKind === 'afro') {
     const afro = mesh(new THREE.IcosahedronGeometry(0.43, 2), hair, 0, 0.2, -0.12);
     afro.material = mat(s.hairColor, { roughness: 1, flatShading: true });
     head.add(afro);
+    trail.push({ obj: afro, set: 0, gain: 0.12, jiggle: true, x0: 0, y0: 0.2, z0: -0.12 });
     hatBase = 0.56;
   } else if (hairKind === 'dreads' || hairKind === 'braids') {
     const braids = hairKind === 'braids';
@@ -144,13 +177,17 @@ export function buildCharacter(style, name) {
       const a = Math.PI * 0.42 + (i / (count - 1)) * Math.PI * 1.16;
       const len = (braids ? 0.5 : 0.42) + ((i * 7) % 5) * 0.045;
       const w = braids ? 0.028 : 0.042;
-      const lock = mesh(new THREE.CylinderGeometry(w, w * 0.8, len, 8), hair);
+      // each lock hangs from a pivot at the scalp, so it swings from the head
+      const lockPivot = new THREE.Group();
       const r = HEAD_R + 0.02;
-      lock.position.set(Math.sin(a) * r, 0.1 - len / 2, Math.cos(a) * r);
-      lock.rotation.z = Math.sin(a) * 0.25;
-      lock.rotation.x = -Math.cos(a) * 0.25;
+      lockPivot.position.set(Math.sin(a) * r, 0.1, Math.cos(a) * r);
+      lockPivot.rotation.z = Math.sin(a) * 0.25;
+      lockPivot.rotation.x = -Math.cos(a) * 0.25;
+      const lock = mesh(new THREE.CylinderGeometry(w, w * 0.8, len, 8), hair, 0, -len / 2, 0);
       lock.add(mesh(new THREE.SphereGeometry(braids ? 0.035 : 0.042, 8, 6), braids ? bead : hair, 0, -len / 2, 0));
-      head.add(lock);
+      lockPivot.add(lock);
+      head.add(lockPivot);
+      trail.push({ obj: lockPivot, set: 0, gain: 0.6 + len * 0.9, baseX: lockPivot.rotation.x, baseZ: lockPivot.rotation.z });
     }
     hatBase = HEAD_R + 0.0;
   }
@@ -223,15 +260,23 @@ export function buildCharacter(style, name) {
     const wrap = mesh(new THREE.TorusGeometry(0.2, 0.075, 10, 24), scarfMat, 0, 1.56, 0.01);
     wrap.rotation.x = Math.PI / 2;
     wrap.scale.set(1.1, 0.85, 1);
-    const tail = mesh(new THREE.BoxGeometry(0.13, 0.42, 0.05), scarfMat, 0.12, 1.33, 0.25);
-    tail.rotation.z = 0.1;
-    body.add(wrap, tail);
+    const tailPivot = new THREE.Group();
+    tailPivot.position.set(0.12, 1.54, 0.25);
+    tailPivot.rotation.z = 0.1;
+    tailPivot.add(mesh(new THREE.BoxGeometry(0.13, 0.42, 0.05), scarfMat, 0, -0.21, 0));
+    body.add(wrap, tailPivot);
+    trail.push({ obj: tailPivot, set: 0, gain: 1.3, baseX: 0, baseZ: 0.1 });
   } else if (s.accessory === 'backpack') {
     const packMat = mat(shifted(s.secondaryColor, 0.45, 0.2, 0.15));
     const strapMat = mat(darker(s.primaryColor, 0.2));
-    const pack = mesh(new THREE.BoxGeometry(0.5, 0.56, 0.24), packMat, 0, 1.2, -0.33);
-    const pocket = mesh(new THREE.BoxGeometry(0.36, 0.22, 0.08), mat(darker(packMat.color.getStyle(), 0.1)), 0, 1.05, -0.47);
-    body.add(pack, pocket);
+    // the pack hangs from a pivot at the shoulders, so it swings
+    const packPivot = new THREE.Group();
+    packPivot.position.set(0, 1.46, -0.2);
+    const pack = mesh(new THREE.BoxGeometry(0.5, 0.56, 0.24), packMat, 0, -0.26, -0.13);
+    const pocket = mesh(new THREE.BoxGeometry(0.36, 0.22, 0.08), mat(darker(packMat.color.getStyle(), 0.1)), 0, -0.41, -0.27);
+    packPivot.add(pack, pocket);
+    body.add(packPivot);
+    trail.push({ obj: packPivot, set: 1, gain: 0.45, baseX: 0, baseZ: 0 });
     for (const side of [-1, 1]) {
       body.add(mesh(new THREE.BoxGeometry(0.06, 0.55, 0.04), strapMat, side * 0.17, 1.22, 0.21));
     }
@@ -242,7 +287,12 @@ export function buildCharacter(style, name) {
   tag.position.y = 2.75 + (s.hat === 'tophat' || s.hat === 'top hat' ? 0.35 : 0) + (s.hair === 'afro' ? 0.15 : 0);
   root.add(tag);
 
-  root.userData = { body, legs, arms, head, tag, phase: 0 };
+  const spring = () => ({ x: 0, v: 0 });
+  root.userData = {
+    body, legs, knees, arms, elbows, head, tag, trail,
+    phase: 0, stride: 0, t: 0, moveBlend: 0, skidBlend: 0, stretch: 1, steps: 0,
+    leanP: spring(), leanR: spring(), sets: [{ p: spring(), r: spring() }, { p: spring(), r: spring() }],
+  };
   return root;
 }
 
@@ -272,18 +322,104 @@ function makeNameTag(text) {
   return sprite;
 }
 
-// Walk / idle animation. speed is 0..1
-export function animateCharacter(ch, dt, speed, time) {
+// ---------------------------------------------------------------- motion
+const DEG = Math.PI / 180;
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const idle = { vx: 0, vz: 0, ax: 0, az: 0, dashing: false, skidding: false };
+
+/**
+ * Animate a character from how it is moving. m = { vx, vz, ax, az, dashing, skidding } in WORLD units (velocity and
+ * acceleration on the ground plane). The character's own rotation.y is its facing. Returns 1 on the frame a foot plants
+ * (from the stride, which advances by DISTANCE travelled so feet do not skate), else 0. No allocation.
+ *   - legs: thigh swing + knee bend on the back swing; arms: opposite swing, elbows bend more when running; walk -> run by speed
+ *   - lean: the body tilts toward its acceleration (more in a dash, back in a skid) on springs (TUNE.leanFreq / leanZeta)
+ *   - hair locks, ponytail, scarf tail, backpack lag on springs (TUNE.trailFreq / trailZeta); afro and bun jiggle
+ *   - dash: the body stretches along its forward axis and tips forward; idle: gentle breathing
+ */
+export function updateCharacterMotion(ch, dt, m) {
   const u = ch.userData;
-  u.phase += dt * (4 + speed * 10);
-  const swing = Math.sin(u.phase) * 0.9 * speed;
-  u.legs[0].rotation.x = swing;
-  u.legs[1].rotation.x = -swing;
-  u.arms[0].rotation.x = -swing * 0.9;
-  u.arms[1].rotation.x = swing * 0.9;
-  const bob = speed > 0.05 ? Math.abs(Math.sin(u.phase)) * 0.08 * speed : Math.sin(time * 2.2) * 0.012;
-  u.body.position.y = bob;
-  u.head.rotation.z = speed > 0.05 ? Math.sin(u.phase) * 0.04 : Math.sin(time * 1.3) * 0.03;
+  const T = TUNE;
+  u.t += dt;
+  const f = ch.rotation.y;
+  const sn = Math.sin(f);
+  const cs = Math.cos(f);
+  // forward = (sin, cos), sideways = (cos, -sin) on the ground
+  const vf = m.vx * sn + m.vz * cs;
+  const vl = m.vx * cs - m.vz * sn;
+  const af = m.ax * sn + m.az * cs;
+  const al = m.ax * cs - m.az * sn;
+  const speed = Math.hypot(m.vx, m.vz);
+  const run = clamp((speed - 2.5) / 4, 0, 1);
+
+  // stride: advances by distance; frozen in a skid (feet planted)
+  const prev = Math.floor(u.stride / Math.PI);
+  if (speed > 0.25 && !m.skidding) u.stride += (speed * dt / T.stride) * Math.PI;
+  const planted = Math.floor(u.stride / Math.PI) !== prev ? 1 : 0;
+  u.steps = planted;
+  u.moveBlend += ((speed > 0.4 && !m.skidding ? 1 : 0) - u.moveBlend) * (1 - Math.exp(-12 * dt));
+  u.skidBlend += ((m.skidding ? 1 : 0) - u.skidBlend) * (1 - Math.exp(-20 * dt));
+  const mb = u.moveBlend;
+
+  const swing = 0.3 + 0.5 * run;
+  const armSwing = 0.25 + 0.55 * run;
+  for (let i = 0; i < 2; i++) {
+    const a = u.stride + (i ? Math.PI : 0);
+    const sa = Math.sin(a);
+    u.legs[i].rotation.x = sa * swing * mb;
+    u.knees[i].rotation.x = Math.max(0, -Math.cos(a)) * (0.45 + 0.95 * run) * mb + 0.35 * u.skidBlend;
+    const arm = -sa * armSwing * mb;
+    u.arms[i].rotation.x = arm - 0.25 * u.skidBlend;
+    u.arms[i].rotation.z = (i ? 1 : -1) * (-0.08 - 0.45 * u.skidBlend - 0.25 * (m.dashing ? 1 : 0));
+    u.elbows[i].rotation.x = -((0.12 + 0.85 * run) * mb + 0.2 + Math.max(0, -arm) * 0.5 * mb);
+  }
+  const breathe = Math.sin(u.t * 2.2) * 0.012;
+  u.body.position.y = Math.abs(Math.sin(u.stride)) * 0.06 * run * mb + breathe * (1 - mb);
+  u.head.rotation.z = Math.sin(u.stride) * 0.04 * mb + Math.sin(u.t * 1.3) * 0.03 * (1 - mb);
+
+  // lean on springs: toward the acceleration, forward in a dash, back in a skid
+  const lim = (m.dashing ? T.leanDash : T.leanMax) * DEG;
+  const tp = clamp(af / 45, -1, 1) * lim + (m.dashing ? 0.5 * lim : 0) - 0.6 * lim * u.skidBlend + clamp(vf / T.speed, 0, 1.5) * 0.25 * lim;
+  const tr = -clamp(al / 45, -1, 1) * lim;
+  springStep(u.leanP, clamp(tp, -1.5 * lim, 1.5 * lim), T.leanFreq, T.leanZeta, dt);
+  springStep(u.leanR, tr, T.leanFreq, T.leanZeta, dt);
+  u.body.rotation.x = u.leanP.x;
+  u.body.rotation.z = u.leanR.x;
+  u.head.rotation.x = -u.leanP.x * 0.5;
+
+  // dash stretch along the forward axis (volume kept roughly)
+  u.stretch += ((m.dashing ? T.dashStretch : 1) - u.stretch) * (1 - Math.exp(-24 * dt));
+  const sxy = 1 / Math.sqrt(u.stretch);
+  u.body.scale.set(sxy, sxy, u.stretch);
+
+  // the things that trail behind
+  for (let k = 0; k < 2; k++) {
+    const set = u.sets[k];
+    const freq = k ? T.trailFreq * 0.75 : T.trailFreq;
+    const zeta = k ? Math.min(1.2, T.trailZeta * 1.15) : T.trailZeta;
+    springStep(set.p, clamp(af * 0.012 + vf * 0.05, -0.9, 0.9), freq, zeta, dt);
+    springStep(set.r, clamp(-(al * 0.012 + vl * 0.05), -0.9, 0.9), freq, zeta, dt);
+  }
+  const trail = u.trail;
+  for (let i = 0; i < trail.length; i++) {
+    const t = trail[i];
+    const set = u.sets[t.set];
+    if (t.jiggle) {
+      t.obj.position.set(t.x0 + set.r.x * t.gain, t.y0 - Math.abs(set.p.x) * t.gain * 0.3, t.z0 - set.p.x * t.gain);
+    } else {
+      t.obj.rotation.x = t.baseX + set.p.x * t.gain;
+      t.obj.rotation.z = t.baseZ + set.r.x * t.gain;
+    }
+  }
+  return planted;
+}
+
+// The menu and game-over poses: the same animation at a share of top speed, in the direction the character faces.
+export function animateCharacter(ch, dt, speed, time) {
+  void time;
+  const v = speed * TUNE.speed;
+  idle.vx = Math.sin(ch.rotation.y) * v;
+  idle.vz = Math.cos(ch.rotation.y) * v;
+  return updateCharacterMotion(ch, dt, idle);
 }
 
 export function disposeCharacter(ch) {

@@ -13,7 +13,9 @@
 // resize, and whenever the deck's orientation changes, it is FITTED: the smallest distance at which the whole walkable
 // area plus CONFIG.camera.fitMargin is on screen (also with the camera at its follow extremes), and the tilt that puts the
 // deck's near edge at CONFIG.camera.bottomNdc. If a screen is too narrow for that elevation, the elevation is eased off.
-// Follow: the camera moves CONFIG.camera.followShare of the player's offset, one spring per axis (motion.js springStep).
+// Follow: the camera moves CONFIG.camera.followShare of the player's offset, one spring per axis (motion.js springStep, frequency
+// TUNE.camFollowFreq). The target leads the player by velocity x TUNE.lookAhead (look-ahead) and a dash gives the camera a tiny
+// push along the dash direction (TUNE.dashKick, at most 0.35 units, kept in reserve by the deck fit). Reduced motion switches both off.
 // The camera never bobs. A tilt this steep keeps the real horizon off the top of the screen, so in play the horizon is the
 // painted line at CONFIG.camera.horizonFrac (see journey.js).
 //
@@ -24,7 +26,8 @@
 // (x, y, roll) applies in every mode. No real-time shadow maps. Pixel ratio is capped (CONFIG.quality).
 
 import * as THREE from 'three';
-import { CONFIG } from '../core/config.js';
+import { CONFIG, TUNE } from '../core/config.js';
+import { state } from '../core/state.js';
 import { springStep } from '../core/motion.js';
 import { cameraShake } from '../fx/juice.js';
 import { deckBounds, deckSize } from './barge.js';
@@ -39,6 +42,9 @@ let follow = null;
 let clock = 0;
 
 // the camera pose is a set of springs
+const KICK_MAX = 0.35;                 // the most a dash kick may move the camera: the deck fit keeps this much in reserve
+const kickX = { x: 0, v: 0 };
+const kickZ = { x: 0, v: 0 };
 const pose = { x: { x: 0, v: 0 }, y: { x: 0, v: 0 }, z: { x: 0, v: 0 }, pitch: { x: 0, v: 0 }, e9: { x: 0, v: 0 } };
 let snapNext = true;
 let fit = null;
@@ -143,8 +149,8 @@ function computeFit(aspect) {
   // the rectangle that must be on screen: the walkable area plus the margin (at most a little past the deck itself)
   const rw = Math.min(b.halfWidth + C.fitMargin, size.width / 2 + 0.4);
   const rd = Math.min(b.halfDepth + C.fitMargin, size.depth / 2 + 0.4);
-  const fx = C.followShare * b.halfWidth;
-  const fz = C.followShare * b.halfDepth;
+  const fx = C.followShare * b.halfWidth + KICK_MAX;   // follow extremes, plus room for the dash kick
+  const fz = C.followShare * b.halfDepth + KICK_MAX;
 
   const attempt = (phi) => {
     // the tilt that puts the near edge on the anchor line (a steeper tilt lifts everything on screen)
@@ -222,8 +228,18 @@ function aim() {
     phi += C.over.higherDeg * DEG;
     ox = Math.sin(clock * 0.35) * C.over.drift;
   } else if (follow) {
-    ox = follow.position.x * C.followShare;
-    oz = follow.position.z * C.followShare;
+    // the follow target leads the player a little (velocity x lookAhead), still inside the walkable area, so the
+    // follow share and the deck fit hold; reduced motion switches the look-ahead off
+    let tx = follow.position.x;
+    let tz = follow.position.z;
+    const mo = follow.userData?.motion;
+    if (mo && !state.settings.reducedMotion) {
+      const b = deckBounds();
+      tx = Math.max(-b.halfWidth, Math.min(b.halfWidth, tx + mo.vx * TUNE.lookAhead));
+      tz = Math.max(-b.halfDepth, Math.min(b.halfDepth, tz + mo.vz * TUNE.lookAhead));
+    }
+    ox = tx * C.followShare;
+    oz = tz * C.followShare;
   }
   target.x = ox;
   target.y = D * Math.sin(phi);
@@ -241,7 +257,7 @@ export function renderFrame(realDt) {
     snapNext = false;
   }
   const playing = mode === 'play';
-  const fFreq = playing ? C.followFreq : C.poseFreq;
+  const fFreq = playing ? TUNE.camFollowFreq : C.poseFreq;
   const fZeta = playing ? C.followZeta : 1;
   springStep(pose.x, target.x, fFreq, fZeta, realDt);
   springStep(pose.z, target.z, fFreq, fZeta, realDt);
@@ -249,8 +265,14 @@ export function renderFrame(realDt) {
   springStep(pose.pitch, target.pitch, C.poseFreq, 1, realDt);
   springStep(pose.e9, target.e9, C.poseFreq, 1, realDt);
 
+  // dash kick: a tiny push in the dash direction on a spring (off with reduced motion)
+  const mo = follow && follow.userData?.motion;
+  const kick = mo && mo.dashing && playing && !state.settings.reducedMotion ? Math.min(KICK_MAX, TUNE.dashKick) : 0;
+  springStep(kickX, mo ? mo.dirX * kick : 0, 7, 0.55, realDt);
+  springStep(kickZ, mo ? mo.dirZ * kick : 0, 7, 0.55, realDt);
+
   const shake = cameraShake();
-  camera.position.set(pose.x.x + shake.x, pose.y.x + shake.y, pose.z.x);
+  camera.position.set(pose.x.x + shake.x + kickX.x, pose.y.x + shake.y, pose.z.x + kickZ.x);
   camera.rotation.set(-pose.pitch.x, 0, shake.roll);
   camera.updateMatrixWorld();
 

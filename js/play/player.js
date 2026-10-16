@@ -1,25 +1,43 @@
-// Mango Rush — player movement, dash, invulnerability.   OWNER: Claude Code  ·  STATUS: done (step 1)
+// Mango Rush — player movement, dash, skid, snap turn, invulnerability.   OWNER: Claude Code  ·  STATUS: step 3 (movement feel)
 //
 // CONTRACT:
-//   initPlayer(parent) ; setCharacter(info)    parent = barge.deckRoot(): the player moves with the deck. Coordinates are deck-local. ; resetPlayer() ; updatePlayer(dt, input)
+//   initPlayer(parent) ; setCharacter(info) ; resetPlayer() ; updatePlayer(dt, input)
+//     parent = barge.deckRoot(): the player moves with the deck. Coordinates are deck-local.
 //   getPlayer() -> { object, x, z, invulnerable, dashing }   the SAME object every call
-//   idlePlayer(realDt, screen) -> void   (added in step 1) main.js calls it when no run is being played: the
-//     character turns slowly on the start screen and stands idle on the game-over screen.
+//   idlePlayer(realDt, screen) -> void   main.js calls it when no run is being played (start screen: the character turns
+//     slowly; game over: stands idle)
 //
-//   updatePlayer(dt, input)  input = { x, z, dash } from core/input.js. Moves inside deckBounds(), faces the
-//     way it moves, dashes (CONFIG.player cooldown), blinks while invulnerable.
-//   Listens for EVENTS.HIT (invulnerable for CONFIG.player.invulnerable seconds).
-//   Emits EVENTS.DASH { x, z, dirX, dirZ }. Writes state.dashReadyFrac (0 = just used, 1 = ready).
+//   updatePlayer(dt, input)   input = { x, z, dash, analog } from core/input.js.
+//     - Direction: smoothInput (TUNE.keySmooth for keys, TUNE.joySmooth for the joystick), so diagonals blend.
+//     - Velocity: accelerateVelocity with TUNE.accel / decel / turnAccel, all scaled by the grip of the surface under the
+//       player (barge.surfaceAt): a low grip means sliding. Facing turns toward the velocity at TUNE.turnRate, never instantly.
+//     - Skid: reversing (input against the velocity) above TUNE.skidFrac of top speed plants the feet for TUNE.skidTime and
+//       leans the body back. Emits EVENTS.SKID.
+//     - Dash: starts on the frame of the press. During the burst the direction FOLLOWS the input at TUNE.dashTurn deg/s
+//       (carving), it is never locked. At the end the speed eases down over TUNE.dashExit seconds (x 1 / grip, at most x 2.5).
+//       A press up to TUNE.dashBuffer seconds before the cooldown ends fires the moment it is ready.
+//     - Snap turn: if, within TUNE.snapWindow after a dash ends, the input points more than TUNE.snapAngle away from the dash
+//       direction, the player keeps TUNE.snapBoost x speed for TUNE.snapTime. Emits EVENTS.SNAP_TURN.
+//     - Footsteps: the character's stride (by distance) says when a foot plants: EVENTS.FOOTSTEP.
+//     Writes state.dashReadyFrac (0 = just used, 1 = ready). Emits EVENTS.DASH { x, z, dirX, dirZ }.
+//     Listens for EVENTS.HIT (invulnerable for CONFIG.player.invulnerable seconds).
+//   The camera reads model.userData.motion = { vx, vz, dashing, dirX, dirZ } (look-ahead and dash kick).
+//
+// The rim of the deck: slow down smoothly over the last stretch, then remove only the outward part of the velocity (no snap).
+// No allocation per frame: every scratch object below is reused.
 
-import { CONFIG } from '../core/config.js';
+import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on, emit } from '../core/events.js';
-import { buildCharacter, animateCharacter, disposeCharacter } from '../world/character.js';
-import { deckBounds } from '../world/barge.js';
+import { smoothInput, accelerateVelocity } from '../core/motion.js';
+import { buildCharacter, updateCharacterMotion, animateCharacter, disposeCharacter } from '../world/character.js';
+import { deckBounds, surfaceAt } from '../world/barge.js';
 import { blobShadow } from '../world/materials.js';
 import { menuStand } from '../world/renderer.js';
+import { burst } from '../fx/juice.js';
 
-const P = CONFIG.player;
+const DEG = Math.PI / 180;
+const DUST = '#E6BE7A';
 
 let scene = null;
 let model = null;
@@ -27,13 +45,33 @@ let blob = null;
 
 let x = 0;
 let z = 0;
-let vx = 0;
-let vz = 0;
 let facing = 0;
 let dashT = 0;
 let dashCool = 0;
+let dashQueued = false;
+let dashDirX = 0;
+let dashDirZ = 1;
+let exitLeft = 0;
+let exitRate = 0;
+let sinceDash = 99;
+let snapPending = false;
+let snapDirX = 0;
+let snapDirZ = 1;
+let boostT = 0;
+let skidT = 0;
+let trailT = 0;
 let invuln = 0;
 let idleTime = 0;
+
+const sm = { x: 0, z: 0 };            // smoothed input
+const vel = { x: 0, z: 0 };
+const prevVel = { x: 0, z: 0 };
+const desired = { x: 0, z: 0 };
+const rates = { accel: 0, decel: 0, turnAccel: 0 };
+const motion = { vx: 0, vz: 0, ax: 0, az: 0, dashing: false, skidding: false };   // for the character
+const camMotion = { vx: 0, vz: 0, dashing: false, dirX: 0, dirZ: 1 };              // for the camera
+const dustAt = { x: 0, y: 0.12, z: 0 };
+const stepEvent = { x: 0, z: 0, speed: 0 };
 
 const view = { object: null, x: 0, z: 0, invulnerable: false, dashing: false };
 
@@ -43,7 +81,7 @@ export function initPlayer(s) {
   blob = blobShadow(0.62, 0.55);
   blob.position.y = 0.02;
   scene.add(blob);
-  on(EVENTS.HIT, () => { invuln = P.invulnerable; });
+  on(EVENTS.HIT, () => { invuln = CONFIG.player.invulnerable; });
 }
 
 export function setCharacter(info) {
@@ -51,15 +89,22 @@ export function setCharacter(info) {
   model = buildCharacter(info.style, info.name);
   model.position.set(x, 0, z);
   model.rotation.y = facing;
+  model.userData.motion = camMotion;
   scene.add(model);
   view.object = model;
 }
 
 export function resetPlayer() {
-  x = z = vx = vz = 0;
+  x = z = 0;
+  vel.x = vel.z = prevVel.x = prevVel.z = 0;
+  sm.x = sm.z = 0;
   facing = 0;
-  dashT = dashCool = invuln = 0;
+  dashT = dashCool = exitLeft = boostT = skidT = invuln = 0;
+  dashQueued = snapPending = false;
+  sinceDash = 99;
   state.dashReadyFrac = 1;
+  camMotion.vx = camMotion.vz = 0;
+  camMotion.dashing = false;
   if (model) { model.visible = true; model.position.set(0, 0, 0); model.rotation.y = 0; model.scale.set(1, 1, 1); }
   syncView();
 }
@@ -72,37 +117,120 @@ function syncView() {
   if (blob) blob.position.set(x, 0.02, z);
 }
 
+function puff(count, speed) {
+  dustAt.x = x;
+  dustAt.z = z;
+  burst(dustAt, DUST, count, speed);
+}
+
+function startDash(inX, inZ, inLen) {
+  let dx = 0;
+  let dz = 0;
+  const sp = Math.hypot(vel.x, vel.z);
+  if (inLen > 0.1) { dx = inX / inLen; dz = inZ / inLen; }
+  else if (sp > 0.5) { dx = vel.x / sp; dz = vel.z / sp; }
+  else { dx = Math.sin(facing); dz = Math.cos(facing); }
+  dashDirX = dx;
+  dashDirZ = dz;
+  dashT = TUNE.dashTime;
+  dashCool = TUNE.dashCooldown;
+  exitLeft = 0;
+  snapPending = false;
+  boostT = 0;
+  trailT = 0;
+  vel.x = dx * TUNE.dashSpeed;       // the burst starts on this very frame
+  vel.z = dz * TUNE.dashSpeed;
+  emit(EVENTS.DASH, { x, z, dirX: dx, dirZ: dz });
+}
+
 export function updatePlayer(dt, input) {
   if (!model) return;
+  const T = TUNE;
   const b = deckBounds();
-  const ix = input.x;
-  const iz = input.z;
-  const len = Math.hypot(ix, iz);
 
-  dashT = Math.max(0, dashT - dt);
   dashCool = Math.max(0, dashCool - dt);
   invuln = Math.max(0, invuln - dt);
+  boostT = Math.max(0, boostT - dt);
+  skidT = Math.max(0, skidT - dt);
+  sinceDash += dt;
+  prevVel.x = vel.x;
+  prevVel.z = vel.z;
 
-  if (input.dash && dashCool <= 0) {
-    dashT = P.dashTime;
-    dashCool = P.dashCooldown;
-    const dirX = len > 0.1 ? ix / len : Math.sin(facing);
-    const dirZ = len > 0.1 ? iz / len : Math.cos(facing);
-    emit(EVENTS.DASH, { x, z, dirX, dirZ });
+  // ---- input: smoothed, so a diagonal is a curve and not a 45 degree snap
+  smoothInput(sm, input, input.analog ? T.joySmooth : T.keySmooth, dt);
+  const rawLen = Math.hypot(input.x, input.z);
+  const inLen = Math.hypot(sm.x, sm.z);
+  const grip = Math.min(1, Math.max(0.05, surfaceAt(x, z).grip));
+
+  // ---- dash: fire on the press frame, or when the cooldown ends if it was pressed up to dashBuffer early
+  if (input.dash) {
+    if (dashT <= 0 && dashCool <= 0) startDash(input.x, input.z, rawLen);
+    else if (dashT <= 0 && dashCool <= T.dashBuffer) dashQueued = true;
   }
-  state.dashReadyFrac = 1 - dashCool / P.dashCooldown;
+  if (dashQueued && dashT <= 0 && dashCool <= 0) { dashQueued = false; startDash(input.x, input.z, rawLen); }
+  state.dashReadyFrac = 1 - Math.min(1, dashCool / T.dashCooldown);
 
-  const speed = dashT > 0 ? P.dashSpeed : P.speed;
-  let dirX = ix;
-  let dirZ = iz;
-  if (dashT > 0 && len < 0.1) { dirX = Math.sin(facing); dirZ = Math.cos(facing); }
-  const k = 1 - Math.exp(-(dashT > 0 ? 30 : P.accel) * dt);
-  vx += (dirX * speed - vx) * k;
-  vz += (dirZ * speed - vz) * k;
-  x += vx * dt;
-  z += vz * dt;
+  const dashing = dashT > 0;
+  if (dashing) {
+    // steer the burst: turn the dash direction toward the input at dashTurn deg/s (never locked to the start direction)
+    if (inLen > 0.15) {
+      let d = Math.atan2(sm.x, sm.z) - Math.atan2(dashDirX, dashDirZ);
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      const step = T.dashTurn * DEG * dt;
+      const a = Math.atan2(dashDirX, dashDirZ) + Math.max(-step, Math.min(step, d));
+      dashDirX = Math.sin(a);
+      dashDirZ = Math.cos(a);
+    }
+    vel.x = dashDirX * T.dashSpeed;
+    vel.z = dashDirZ * T.dashSpeed;
+    dashT -= dt;
+    trailT -= dt;
+    if (trailT <= 0) { trailT = 0.035; puff(2, 1.4); }
+    if (dashT <= 0) {
+      dashT = 0;
+      exitLeft = T.dashExit * Math.min(2.5, 1 / grip);   // a dash carries further on a slippery surface
+      exitRate = Math.max(1, (T.dashSpeed - T.speed) / Math.max(0.02, exitLeft));
+      sinceDash = 0;
+      snapPending = true;
+      snapDirX = dashDirX;
+      snapDirZ = dashDirZ;
+    }
+  } else {
+    // ---- snap turn: a sharp turn right after a dash keeps a short speed boost
+    if (snapPending) {
+      if (sinceDash > T.snapWindow) snapPending = false;
+      else if (inLen > 0.5 && (sm.x * snapDirX + sm.z * snapDirZ) / inLen < Math.cos(T.snapAngle * DEG)) {
+        snapPending = false;
+        boostT = T.snapTime;
+        puff(7, 2.2);
+        emit(EVENTS.SNAP_TURN, { x, z, dirX: sm.x / inLen, dirZ: sm.z / inLen });
+      }
+    }
+    // ---- skid: reversing at speed plants the feet
+    const spd = Math.hypot(vel.x, vel.z);
+    // (judged on the RAW input: the smoothed one is still catching up when the key flips, and the speed is already gone)
+    if (skidT <= 0 && rawLen > 0.5 && spd > T.skidFrac * T.speed && vel.x * input.x + vel.z * input.z < 0) {
+      skidT = T.skidTime;
+      puff(8, 2.6);
+      emit(EVENTS.SKID, { x, z });
+    }
+    // ---- velocity: a quick push-off, a short glide to a stop, a firm reversal; all scaled by grip
+    const top = T.speed * (boostT > 0 ? T.snapBoost : 1);
+    desired.x = sm.x * top;
+    desired.z = sm.z * top;
+    rates.accel = T.accel * grip;
+    rates.decel = T.decel * grip;
+    rates.turnAccel = T.turnAccel * grip;
+    if (exitLeft > 0) {
+      exitLeft -= dt;
+      rates.accel = rates.decel = Math.min(rates.accel, exitRate * grip);   // an ease out of the burst, not a dead stop
+    }
+    accelerateVelocity(vel, desired, rates, dt);
+  }
 
-  // the rim: slow down smoothly over the last stretch, then remove only the outward part of the velocity (no snap)
+  // ---- the rim: slow down smoothly over the last stretch, then remove only the outward part of the velocity
+  x += vel.x * dt;
+  z += vel.z * dt;
   const e = Math.hypot(x / b.halfWidth, z / b.halfDepth);
   const zone = CONFIG.deck.slowZone;
   if (e > 1 - zone) {
@@ -111,26 +239,47 @@ export function updatePlayer(dt, input) {
     const nl = Math.hypot(nx, nz) || 1;
     const ux = nx / nl;
     const uz = nz / nl;
-    const out = vx * ux + vz * uz;
+    const out = vel.x * ux + vel.z * uz;
     if (out > 0) {
       const u = Math.min(1, (e - (1 - zone)) / zone);
       const cut = u * u * (3 - 2 * u);
-      vx -= ux * out * cut;
-      vz -= uz * out * cut;
+      vel.x -= ux * out * cut;
+      vel.z -= uz * out * cut;
     }
     if (e > 1) { x /= e; z /= e; }
   }
 
-  const moving = Math.hypot(vx, vz);
-  if (moving > 0.3) {
-    let d = Math.atan2(vx, vz) - facing;
+  // ---- facing: turns toward the velocity at a limited rate, never instantly (feet stay planted in a skid)
+  const spd = Math.hypot(vel.x, vel.z);
+  if (spd > 0.3 && skidT <= 0) {
+    let d = Math.atan2(vel.x, vel.z) - facing;
     d = Math.atan2(Math.sin(d), Math.cos(d));
-    facing += d * (1 - Math.exp(-14 * dt));
+    const step = (dashT > 0 ? Math.max(T.turnRate, T.dashTurn) : T.turnRate) * DEG * dt;
+    facing += Math.max(-step, Math.min(step, d));
   }
   model.position.set(x, 0, z);
   model.rotation.y = facing;
-  animateCharacter(model, dt, Math.min(1, moving / P.speed), state.time);
+
+  // ---- the body
+  motion.vx = vel.x;
+  motion.vz = vel.z;
+  motion.ax = (vel.x - prevVel.x) / dt;
+  motion.az = (vel.z - prevVel.z) / dt;
+  motion.dashing = dashT > 0;
+  motion.skidding = skidT > 0;
+  if (updateCharacterMotion(model, dt, motion) && spd > 1.2) {
+    stepEvent.x = x;
+    stepEvent.z = z;
+    stepEvent.speed = spd;
+    emit(EVENTS.FOOTSTEP, stepEvent);
+  }
   model.visible = invuln <= 0 || Math.floor(invuln * 12) % 2 === 0;
+
+  camMotion.vx = vel.x;
+  camMotion.vz = vel.z;
+  camMotion.dashing = dashT > 0;
+  camMotion.dirX = dashDirX;
+  camMotion.dirZ = dashDirZ;
   syncView();
 }
 
@@ -148,6 +297,8 @@ export function idlePlayer(realDt, screen) {
     model.visible = true;
     animateCharacter(model, realDt, 0, idleTime);
   }
+  camMotion.vx = camMotion.vz = 0;
+  camMotion.dashing = false;
   syncView();
 }
 

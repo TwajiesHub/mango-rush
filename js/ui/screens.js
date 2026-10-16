@@ -241,7 +241,7 @@ export function initScreens(root, a) {
     if (r.ok) {
       line.textContent = fill(TEXT.gameOver.rank, { rank: r.rank }) + (r.improved ? ` · ${TEXT.gameOver.boardBest}` : '');
     } else {
-      line.textContent = TEXT.gameOver.saveFailed;
+      line.textContent = r.error === 'tuned' ? TEXT.gameOver.notRanked : TEXT.gameOver.saveFailed;
     }
   });
 }

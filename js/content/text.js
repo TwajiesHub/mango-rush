@@ -120,6 +120,7 @@ const TEXT = {
     boardBest: 'New best on the board',                      // max 26
     guestBoard: 'Sign in to get on the leaderboard',         // max 36
     saveFailed: 'Could not reach the leaderboard',           // max 36
+    notRanked: 'Tuning run · not ranked',                    // max 28 (debug tuning panel only)
   },
 
   leaderboard: {

@@ -51,6 +51,9 @@ export const EVENTS = Object.freeze({
 
   // ---- player actions (emitted by play/player.js)
   DASH: 'dash',                     // { x, z, dirX, dirZ }
+  SKID: 'skid',                     // { x, z }   a hard reversal at speed
+  SNAP_TURN: 'snapturn',            // { x, z, dirX, dirZ }   a sharp turn right after a dash
+  FOOTSTEP: 'footstep',             // { x, z, speed }   a foot plants (speed in units / second)
 
   // ---- happenings (emitted by play/happenings.js)
   HAPPENING_WARN: 'happening:warn', // { id: 'gust'|'bat'|'bigone'|'shower'|'volley'|'bridge', inSeconds }

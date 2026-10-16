@@ -5,12 +5,8 @@ export const CONFIG = Object.freeze({
   lives: 3,
 
   player: {
-    speed: 6.4,               // units / second
-    accel: 14,                // higher = snappier
-    dashSpeed: 15,
-    dashTime: 0.17,           // seconds
-    dashCooldown: 1.1,
     invulnerable: 1.2,        // seconds after a hit
+    // movement, dash, body, camera and footstep numbers are live-tunable: see TUNE below
   },
 
   // Difficulty keyframes by run time (seconds). Values are interpolated (eased) between keys.
@@ -67,8 +63,7 @@ export const CONFIG = Object.freeze({
     screenPad: 0.03,         // share of half the screen kept free at the sides and top
     bottomNdc: { landscape: -0.82, portrait: -0.62 },   // where the near edge of the deck sits (-1 = screen bottom)
     followShare: 0.15,        // the camera moves this share of the player's offset from the centre
-    followFreq: 1.6,
-    followZeta: 1,
+    followZeta: 1,            // (the follow frequency is TUNE.camFollowFreq)
     poseFreq: 2.2,            // how fast the camera glides between menu / play / over poses
     over: { farther: 1.12, higherDeg: 5, drift: 0.7 },
     // the start-screen camera: position, tilt, where the horizon sits (share from the top) and where the character stands
@@ -184,4 +179,86 @@ export function phaseAt(t) {
   let id = CONFIG.phases[0].id;
   for (const p of CONFIG.phases) if (t >= p.t) id = p.id;
   return id;
+}
+
+// ---------------------------------------------------------------- live tuning (step 3)
+// TUNE is the MUTABLE copy of every feel number: movement, dash, body springs, camera, footsteps. Movement, character,
+// camera and audio code read TUNE (never CONFIG) for these, so the ?debug tuning panel (ui/tune.js) can change them live.
+// Each row: [key, group, label, default, min, max, step, shownInPanel]. Units are in the label.
+const TUNE_ROWS = [
+  // movement
+  ['speed',        'Movement', 'Top speed (u/s)',        6.4, 3,   10,   0.1, true],
+  ['accel',        'Movement', 'Accel (u/s²)',           55,  10,  140,  1,   true],
+  ['decel',        'Movement', 'Decel (u/s²)',           45,  10,  140,  1,   true],
+  ['turnAccel',    'Movement', 'Turn accel (u/s²)',      95,  20,  220,  1,   true],
+  ['keySmooth',    'Movement', 'Keyboard smoothing (/s)', 14, 4,   40,   1,   true],
+  ['joySmooth',    'Movement', 'Joystick smoothing (/s)', 30, 10,  60,   1,   false],
+  ['turnRate',     'Movement', 'Turn rate (°/s)',        720, 180, 1440, 20,  true],
+  ['skidFrac',     'Movement', 'Skid above (share of top speed)', 0.6, 0.3, 0.95, 0.05, false],
+  ['skidTime',     'Movement', 'Skid time (s)',          0.15, 0.05, 0.4, 0.01, false],
+  // dash
+  ['dashSpeed',    'Dash', 'Dash speed (u/s)',           15,  8,   28,   0.5, true],
+  ['dashTime',     'Dash', 'Dash time (s)',              0.17, 0.08, 0.4, 0.01, true],
+  ['dashCooldown', 'Dash', 'Dash cooldown (s)',          1.1, 0.4, 3,    0.05, true],
+  ['dashTurn',     'Dash', 'Dash turn rate (°/s)',       900, 0,   2400, 50,  true],
+  ['dashExit',     'Dash', 'Dash exit time (s)',         0.12, 0,  0.4,  0.01, true],
+  ['dashBuffer',   'Dash', 'Dash buffer (s)',            0.1, 0,   0.3,  0.01, false],
+  ['dashStretch',  'Dash', 'Dash stretch (×)',           1.3, 1,   1.6,  0.05, false],
+  ['snapBoost',    'Dash', 'Snap-turn boost (×)',        1.25, 1,  1.6,  0.01, true],
+  ['snapTime',     'Dash', 'Snap-turn boost time (s)',   0.25, 0.05, 0.6, 0.01, true],
+  ['snapWindow',   'Dash', 'Snap-turn window (s)',       0.12, 0.04, 0.4, 0.01, false],
+  ['snapAngle',    'Dash', 'Snap-turn angle (°)',        60,  20,  120,  5,   false],
+  // body
+  ['leanMax',      'Body', 'Lean max (°)',               12,  0,   30,   1,   true],
+  ['leanDash',     'Body', 'Lean in a dash (°)',         18,  0,   40,   1,   false],
+  ['leanFreq',     'Body', 'Lean spring (Hz)',           2.2, 0.5, 6,    0.1, true],
+  ['leanZeta',     'Body', 'Lean damping',               0.6, 0.2, 1.2,  0.05, true],
+  ['trailFreq',    'Body', 'Hair / scarf spring (Hz)',   3.2, 0.8, 8,    0.1, true],
+  ['trailZeta',    'Body', 'Hair / scarf damping',       0.4, 0.15, 1,   0.05, true],
+  ['stride',       'Body', 'Stride length (u)',          1.1, 0.6, 2,    0.05, true],
+  // camera and sound
+  ['camFollowFreq', 'Camera and sound', 'Camera follow (Hz)', 1.6, 0.6, 5, 0.1, true],
+  ['lookAhead',    'Camera and sound', 'Look-ahead (s)', 0.12, 0, 0.4,  0.01, true],
+  ['dashKick',     'Camera and sound', 'Dash kick (u)',  0.15, 0,   0.6,  0.01, false],
+  ['stepVolume',   'Camera and sound', 'Footstep volume', 1,  0,   2,    0.05, true],
+];
+
+export const TUNE_DEFS = Object.freeze(TUNE_ROWS.map(([key, group, label, def, min, max, step, panel]) => Object.freeze({ key, group, label, def, min, max, step, panel })));
+export const TUNE = {};
+for (const d of TUNE_DEFS) TUNE[d.key] = d.def;
+
+let tuneChanged = false;
+let tuneStamp = 0;
+
+// "changed" means a real difference: a quarter of a slider step, so rounding on the way back to the default does not count
+function recheck() {
+  tuneStamp++;
+  tuneChanged = TUNE_DEFS.some((d) => Math.abs(TUNE[d.key] - d.def) > Math.max(1e-6, d.step * 0.25));
+}
+
+/** Set one tuning value (clamped to its range). Returns the value actually stored. */
+export function setTune(key, value) {
+  const d = TUNE_DEFS.find((x) => x.key === key);
+  if (!d || !Number.isFinite(value)) return TUNE[key];
+  TUNE[key] = Math.min(d.max, Math.max(d.min, value));
+  recheck();
+  return TUNE[key];
+}
+
+/** Back to the defaults. */
+export function resetTune() {
+  for (const d of TUNE_DEFS) TUNE[d.key] = d.def;
+  recheck();
+}
+
+/** True while any tuning value really differs from its default. Such runs are never saved to the leaderboard. */
+export function tuneIsChanged() {
+  return tuneChanged;
+}
+
+/** Changed values only, as a plain object (for copying into a message). */
+export function tuneChangedValues() {
+  const out = {};
+  for (const d of TUNE_DEFS) if (Math.abs(TUNE[d.key] - d.def) > Math.max(1e-6, d.step * 0.25)) out[d.key] = +TUNE[d.key].toFixed(4);
+  return out;
 }
