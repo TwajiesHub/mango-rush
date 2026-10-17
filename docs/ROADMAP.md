@@ -11,8 +11,8 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
 | 3 | Movement feel | smooth direction, weight, skid, steerable dash + snap turn, lean, knees/elbows, trailing hair/scarf, look-ahead camera, slippery-surface hook, footsteps, `?debug` tuning panel; 3b: dash button, 60 fps frame pacing, quality manager | done |
 | 4 | The look | cel shading, outlines, paper grain, item models, dot-ring warnings, character print pattern + reactions, Archivo name tag | done |
 | 5a | The rules, part 1 | rings closing in, coconut types (slow, fast, drifter, late-lock) + shuffle bag + mercy window, working Perfect dodge, sawtooth waves + breathers, early golden win, rotten + shield live; small fixes (mango shape, deck colour, dash pill) | done |
-| 5b | The rules, part 2 | the pot + bank spots, skills (Swoop, Chain, Slam bank), juice splats, golden plank, pot chip in the HUD | **CURRENT** |
-| 6 | The journey | six depth layers, places + banners, golden hour → dusk → night lighting, wet edges | — |
+| 5b | The rules, part 2 | the pot + bank spots, skills (Swoop, Chain, Slam bank), juice splats, golden plank, pot chip in the HUD | done |
+| 6 | The journey | six parallax layers, six places + banners, golden hour → dusk → night → midnight light, moon + stars, lanterns, wet edges, birds/bats/fireflies/fireworks, score-version reset, N debug key | **CURRENT** |
 | 7 | Happenings | showers, bridge, gust, fruit bat, volleys, The Big One | — |
 | 8 | Adrenaline + feel | heartbeat, Madness, best chase, bank/skill effects, living planks, freezes, shake, squash, particles, pop-ups | — |
 | 9 | The screens | start, HUD (pot chip), pause, game over (record near miss, lost pot, skills line, rival), leaderboard, share card — matched to the mockups | — |
