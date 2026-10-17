@@ -100,6 +100,51 @@ export const CONFIG = Object.freeze({
     flowSpeed: 1.2,           // how fast the water streams past the barge (units / second)
   },
 
+  // The journey (step 6): world/journey.js and the deck's lights and wet edges (world/barge.js). Everything is tied to RUN TIME
+  // (state.time), never to the rng, so the Daily Run is the same for everyone. Layer speeds are in screen-height units per second
+  // (1 unit = half the screen height); the barge drifts to screen-left, so scenery moves left to right.
+  journey: {
+    places: [                 // PLACE_ENTER: when the new place's scenery starts to enter the screen
+      { id: 'makoko', t: 0 },
+      { id: 'mangroves', t: 35 },
+      { id: 'bridge', t: 70 },
+      { id: 'waterfront', t: 110 },
+      { id: 'city', t: 150 },
+      { id: 'open', t: 210 },
+    ],
+    blend: 4,                 // seconds a phase takes to blend into the next (colours, light)
+    speeds: { far: 0.018, bank: 0.07, fg: 0.3 },
+    sunSink: { from: 60, to: 150, drop: 0.46 },   // the sun sinks by this many units over dusk (it sets below the bank)
+    moonY: { night: 0.3, midnight: 0.4 },
+    // colours and light per phase. sky: four bands from the top down; lit = how strongly the lit windows / lanterns glow
+    palettes: {
+      golden: {
+        sky: ['#D9472F', '#E4573D', '#EB6A47', '#F07F55'], cloud: '#F4916A', water: '#1FA39A', bank: '#0F3D2E', sun: '#ffffff', streak: '#F2A93B',
+        deck: '#ffffff', key: ['#fff0d8', 0.95], hemi: ['#ffe6c4', '#9a6a4a', 0.35], rim: ['#bcd6ff', 0], stars: 0, litBank: 0, litFar: 0, farK: 0.2,
+      },
+      dusk: {
+        sky: ['#3A1634', '#5A2140', '#A33A4A', '#E4573D'], cloud: '#8A3A55', water: '#12726F', bank: '#0C2B2A', sun: '#ffb59a', streak: '#E8803A',
+        deck: '#efd0b2', key: ['#ffc89a', 0.82], hemi: ['#f0b090', '#6a4a5a', 0.36], rim: ['#bcd6ff', 0.4], stars: 0, litBank: 1, litFar: 0.25, farK: 0.35,
+      },
+      night: {
+        sky: ['#0B0B0C', '#0D1626', '#12243A', '#1B3550'], cloud: '#16263A', water: '#123A4A', bank: '#060F12', sun: '#331a1a', streak: '#F2B04A',
+        deck: '#8a9ac2', key: ['#a9bde8', 0.78], hemi: ['#8aa0d0', '#3a3a55', 0.5], rim: ['#c4dcff', 2.8], stars: 1, litBank: 1, litFar: 1, farK: 0.6,
+      },
+      midnight: {
+        sky: ['#0B0B0C', '#0D1626', '#12243A', '#1B3550'], cloud: '#16263A', water: '#123A4A', bank: '#060F12', sun: '#331a1a', streak: '#F2B04A',
+        deck: '#8a9ac2', key: ['#a9bde8', 0.78], hemi: ['#8aa0d0', '#3a3a55', 0.5], rim: ['#c4dcff', 2.8], stars: 1, litBank: 1, litFar: 1, farK: 0.6,
+      },
+    },
+    // wet edges (from dusk): a band along the walkable ellipse's edge; grip is slippery, never forbidden. Width = share of the radius.
+    wet: { from: 60, to: 210, frac: 0.18, grip: 0.55, ramp: 0.04 },
+    lantern: { from: 60, fade: 3, flicker: 0.06 },   // the four lantern posts light up from dusk (fade seconds)
+    // ambient life (pooled; allocation free). Fireworks are SOFT and never flash more than 3 times a second (see journey.js).
+    birds: { every: [15, 20], count: 5, speed: 0.22 },
+    bats: { every: [7, 11], count: 3, speed: 0.3 },
+    fireflies: 10,
+    fireworks: { every: [3, 5.5], dur: 1.8, flash: 0.09, minGap: 1.2 },
+  },
+
   // Falling items (play/drops.js). Fall time is the warning time from `difficulty`, so the ring tells the truth.
   drops: {
     height: 16,               // spawn height above the ground
@@ -220,6 +265,11 @@ export function waveAt(t) {
   return { intensity: 1 + W.peak * calm * (u / W.length), breather: false, index };
 }
 
+/** Mark this run as not ranked (the ?debug N key jumps the clock): tuneIsChanged() is true from now on. */
+export function markUnranked() {
+  unranked = true;
+}
+
 /** Phase id at run time t. */
 export function phaseAt(t) {
   let id = CONFIG.phases[0].id;
@@ -275,6 +325,7 @@ for (const d of TUNE_DEFS) TUNE[d.key] = d.def;
 
 let tuneChanged = false;
 let tuneStamp = 0;
+let unranked = false;
 
 // "changed" means a real difference: a quarter of a slider step, so rounding on the way back to the default does not count
 function recheck() {
@@ -299,7 +350,7 @@ export function resetTune() {
 
 /** True while any tuning value really differs from its default. Such runs are never saved to the leaderboard. */
 export function tuneIsChanged() {
-  return tuneChanged;
+  return tuneChanged || unranked;
 }
 
 /** Changed values only, as a plain object (for copying into a message). */

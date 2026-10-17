@@ -79,6 +79,7 @@ const last = {
   dash: -1, shield: null, pot: -1,
 };
 let bannerTimer = 0;
+let bannerFade = 0;
 let flyTimer = 0;
 let scoreShown = 0;       // the score as drawn: it counts up to state.score after a bank
 let scoreFrom = 0;
@@ -145,7 +146,7 @@ export function initHud(r, a) {
   dashBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 
   on(EVENTS.RUN_START, reset);
-  on(EVENTS.PLACE_ENTER, (e) => banner(TEXT.places[e.place], 2500, false));
+  on(EVENTS.PLACE_ENTER, (e) => banner(TEXT.places[e.place], 2200, false));   // slides down, holds 2.2 s, then fades
   on(EVENTS.HAPPENING_WARN, (e) => banner(TEXT.happenings[e.id], 2000, true));
   on(EVENTS.COMBO_CHANGE, (e) => {
     if (e.stepUp) pulse(el.combo, 'is-pop');
@@ -205,9 +206,12 @@ function banner(text, ms, warn) {
   if (!text) return;
   el.banner.textContent = text.toUpperCase();
   el.banner.classList.toggle('is-warn', !!warn);
+  el.banner.classList.remove('is-out');
   el.banner.hidden = false;
   clearTimeout(bannerTimer);
-  bannerTimer = setTimeout(() => { el.banner.hidden = true; }, ms);
+  clearTimeout(bannerFade);
+  bannerFade = setTimeout(() => el.banner.classList.add('is-out'), ms);                    // a short fade (CSS) after the hold
+  bannerTimer = setTimeout(() => { el.banner.hidden = true; el.banner.classList.remove('is-out'); }, ms + 400);
 }
 
 function reset() {

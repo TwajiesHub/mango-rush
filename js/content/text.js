@@ -50,10 +50,10 @@ const TEXT = {
 
   places: {                                                  // banners, ALL CAPS on screen, max 22
     makoko: 'Passing Makoko',
-    mangroves: 'Through the mangroves',
+    mangroves: 'The mangroves',
     bridge: 'Under the bridge',
-    waterfront: 'The waterfront market',
-    city: 'The city lights up',
+    waterfront: 'The waterfront',
+    city: 'The city lights',
     open: 'Open water',
   },
 

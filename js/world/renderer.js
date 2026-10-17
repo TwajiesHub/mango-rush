@@ -43,7 +43,7 @@ import { springStep } from '../core/motion.js';
 import { cameraShake, setParticleScale } from '../fx/juice.js';
 import { setGrainPixelRatio } from './materials.js';
 import { deckBounds, deckSize } from './barge.js';
-import { syncBackdrop } from './journey.js';
+import { syncBackdrop, consumeWaterColor, setJourneyDetail } from './journey.js';
 
 const DEG = Math.PI / 180;
 const C = CONFIG.camera;
@@ -142,6 +142,7 @@ function applyLevel(n, now) {
   ctx.renderer.setPixelRatio(pixelRatio);
   ctx.renderer.setSize(innerWidth, innerHeight, false);
   setParticleScale(levels[n].particles);
+  setJourneyDetail(n);              // lower levels thin out the far layer and the ambient life
   setGrainPixelRatio(pixelRatio);   // the paper grain keeps its size ON SCREEN at every quality level
   Q.winStart = now;
   Q.winSum = Q.winN = 0;
@@ -404,6 +405,8 @@ export function renderFrame(realDt) {
   camera.projectionMatrix.elements[9] = pose.e9.x;
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 
+  const water = consumeWaterColor();   // the water is the clear colour: the journey changes it by phase (step 6)
+  if (water) renderer.setClearColor(water);
   syncBackdrop(camera, 1 - 2 * C.horizonFrac);
   renderer.render(scene, camera);
 }

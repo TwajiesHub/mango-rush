@@ -85,6 +85,8 @@ function paintPerf() {
       `pot ${p.pot}   banks ${p.stats.banks} (slams ${p.stats.slams}, best ${p.stats.bestBank})   lost ${p.stats.potLostTotal}`,
       `swoops ${p.stats.swoops}   best chain ${p.stats.bestChain}`,
       `plank ${p.plank.active ? '(' + p.plank.x.toFixed(1) + ', ' + p.plank.z.toFixed(1) + ')' : 'not yet'}   next move in ${p.plank.inSeconds.toFixed(1)} s   (${p.plank.candidates} spots)`,
+      p.journey ? `place ${p.journey.place}   phase ${p.journey.phase}   blend ${p.journey.blend}   run clock ${p.journey.t.toFixed(0)} s` : '',
+      `wet band ${(p.wet * 100).toFixed(0)}% of the radius (grip ${p.wet > 0 ? '0.55 at the edge' : 'normal'})`,
       `bank spots ${p.banks.map((b) => '(' + b.x.toFixed(1) + ', ' + b.z.toFixed(1) + ')').join('  ')}`,
       `juice patches ${p.patches.length}${p.patches.length ? '  ' + p.patches.map((q) => '(' + q.x + ',' + q.z + ' ' + q.life + 's)').join(' ') : ''}`,
     ] : []),

@@ -6,15 +6,15 @@
 
 import { state } from './core/state.js';
 import { EVENTS, on, emit } from './core/events.js';
-import { CONFIG, phaseAt, tuneIsChanged } from './core/config.js';
+import { CONFIG, phaseAt, tuneIsChanged, markUnranked } from './core/config.js';
 import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
 import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone, bankHintDone, setBankDone } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
 import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, warmUp, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
 import { createFrameClock } from './core/frameclock.js';
-import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation, juicePatches } from './world/barge.js';
-import { buildJourney, resetJourney, updateJourney } from './world/journey.js';
+import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation, juicePatches, wetBandFrac } from './world/barge.js';
+import { buildJourney, resetJourney, updateJourney, getJourneyDebug } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose } from './play/player.js';
 import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop } from './play/drops.js';
 import { initBank, resetBank, updateBank, bankSpots } from './play/bank.js';
@@ -128,6 +128,7 @@ function fitDeckToScreen() {
 
 function toMenu() {
   clearDrops();
+  resetJourney();   // the start screen is always golden hour (the journey's clock reads 0 there)
   setScreen('start');
   fitDeckToScreen();
   showHud(false);
@@ -314,7 +315,7 @@ function benchBusyScene(pr = 1.5, frames = 90) {
 function getPerf() {
   const s = clock.stats();
   const q = getQualityInfo();
-  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer, drops: getDropDebug(), plank: getPlankDebug(), banks: bankSpots(), pot: state.pot, stats: state.stats, patches: juicePatches().filter((p) => p.life > 0).map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1), life: +p.life.toFixed(1) })) };
+  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer, drops: getDropDebug(), plank: getPlankDebug(), banks: bankSpots(), pot: state.pot, stats: state.stats, journey: getJourneyDebug(), wet: wetBandFrac(), patches: juicePatches().filter((p) => p.life > 0).map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1), life: +p.life.toFixed(1) })) };
 }
 
 // ---------------------------------------------------------------- debug (only with ?debug in the URL)
@@ -349,6 +350,17 @@ if (location.search.includes('debug')) {
     const a = Math.random() * Math.PI * 2;
     const r = Math.sqrt(Math.random()) * 0.8;
     forceDrop('coconut', Math.cos(a) * r * b.halfWidth, Math.sin(a) * r * b.halfDepth, undefined, KINDS[i]);
+  });
+  // N jumps the run clock to the start of the next phase (dusk, night, midnight) so they can be seen without surviving that long. The run is
+  // marked "TUNING · NOT RANKED", exactly like the tuning panel.
+  addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'n' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || state.screen !== 'play') return;
+    const next = CONFIG.phases.find((p) => p.t > state.time);
+    if (!next) return;
+    state.time = next.t + 0.01;
+    markUnranked();
+    runTuned = true;
+    window.__tune?.refresh?.();
   });
   window.__mangoTest = { scoring: () => { const r = scoringSelfTest(); console[r.ok ? 'log' : 'error']('[scoring self-check]', r); return r; } };
 }

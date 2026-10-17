@@ -25,13 +25,19 @@
 //     Settings are saved per device, not per user: key "mango-rush:settings".
 //   saveSettings(settings) -> void
 //
+// SCORE_VERSION (step 6). When the scoring rules change (step 5b's pot changed what a score means), a best saved under the OLD
+//   rules is not comparable any more. progress carries { scoreVersion }; when the saved data has an older (or no) version, initStore()
+//   resets best and dailyBest to 0, ONCE, and saves the new version. Everything else (mangoes, runs, warm-up) is kept. The start.ng
+//   leaderboard is server-side and is never touched. Raise SCORE_VERSION whenever the rules change again.
+//
 // RULES:
 //   - Wrap EVERY localStorage read/write in try/catch. Storage can be blocked (private mode).
 //     If it fails, keep working from memory for this session. Never throw.
 //   - Store JSON. Ignore corrupt values (fall back to defaults).
 //   - No imports.
 
-const DEFAULTS = { best: 0, dailyBest: 0, dailyDate: null, totalMangoes: 0, runs: 0, warmupDone: false };
+export const SCORE_VERSION = 2;
+const DEFAULTS = { best: 0, dailyBest: 0, dailyDate: null, totalMangoes: 0, runs: 0, warmupDone: false, scoreVersion: SCORE_VERSION };
 let userId = 'guest';
 let memory = { ...DEFAULTS };
 
@@ -64,6 +70,7 @@ export function initStore(id) {
     memory.totalMangoes = num(saved.totalMangoes);
     memory.runs = num(saved.runs);
     memory.warmupDone = saved.warmupDone === true;
+    if (saved.scoreVersion !== SCORE_VERSION) { memory.best = 0; memory.dailyBest = 0; save(); }   // the rules changed: old bests do not compare
   }
 }
 

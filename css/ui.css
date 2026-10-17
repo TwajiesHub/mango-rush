@@ -164,6 +164,7 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 .time__phase { font-size: 11px; font-weight: 800; letter-spacing: 0.2em; }
 .time__clock { font: 900 20px var(--font-display); font-variant-numeric: tabular-nums; }
 
+.hud__banner.is-out { opacity: 0; transition: opacity 380ms ease-out; }
 .hud__banner { left: 50%; top: calc(110px + var(--safe-t)); transform: translateX(-50%); padding: 8px 22px; background: var(--ink); color: var(--cream); font: 600 18px var(--font-ceremony); letter-spacing: 0.42em; white-space: nowrap; animation: slideDown 300ms var(--ease-out); }
 .hud__banner.is-warn { background: var(--vermilion-dark); }
 @keyframes slideDown { from { transform: translate(-50%, -16px); opacity: 0; } }

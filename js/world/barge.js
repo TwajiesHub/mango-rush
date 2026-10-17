@@ -14,6 +14,14 @@
 //   cratePositions() -> [{ x, z }]   the two mango crates (deck-local, far corners): the bank spots sit in front of them
 //   plankLayout() -> { width, depth, plankW, butt, step }   how the planks are painted (width and depth of the deck as built, plank
 //                                 width, the length between butt joints, and the stagger per plank): the golden plank lines up with it
+//   WET EDGES (step 6): from dusk water washes over the outer planks: a band along the edge of the walkable ellipse, from e = 1 - w to the
+//                                 rim (e = hypot(x / halfWidth, z / halfDepth)), with w = CONFIG.journey.wet (0 at 60 s, 18% by midnight, a pure
+//                                 function of state.time: the headless bot sees it too; 0 on the start screen). Grip there is
+//                                 CONFIG.journey.wet.grip (0.55), eased in over the band's inner edge. The juice patch grip still wins.
+//   setLanternLevel(level)        0..1: the four lantern posts glow (a warm glow sprite and a soft warm pool on the deck each, one additive
+//                                 instanced mesh) and the lantern glass lights up. journey.js drives it (fade in over 3 s from dusk, flicker).
+//   setDeckLook({ deck, water })  THREE.Colors used as MULTIPLIERS (white = the painted colours): the deck's paint is unlit, so the phase tints
+//                                 it here (a cool dim deck at night); the water streaks and the foam follow the water colour (water / golden-hour water).
 //   addJuicePatch(x, z) ; clearJuicePatches() ; updateJuicePatches(dt) ; juicePatches() -> [{ x, z, life, r }] (read only)   the slippery juice of a rotten
 //                                 mango (step 5b): at most CONFIG.juice.max at once (the oldest is recycled), CONFIG.juice.life seconds,
 //                                 fading over the last CONFIG.juice.fade. A flat amber decal, unlit, just above the deck.
@@ -32,6 +40,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
 import { flat, toon, outline, blobShadow, mergeToonProps } from './materials.js';
+import { wetFrac, smooth } from '../core/journeymath.js';
 
 const D = CONFIG.deck;
 const DEG = Math.PI / 180;
@@ -50,6 +59,16 @@ let orientation = 'landscape';
 let size = { width: D.width, depth: D.depth };
 const bounds = { halfWidth: 0, halfDepth: 0 };
 let t = 0;
+const deckMats = [];         // the deck's unlit paint (the phase tints it)
+const glassMeshes = [];      // the four lantern glasses
+let glowMesh = null;
+let lanternLevel = 0;
+const deckBase = [];        // the painted colour of each deck material (the tint multiplies it)
+const look = { deck: new THREE.Color(1, 1, 1), water: new THREE.Color(1, 1, 1) };
+const STREAK_COLOR = new THREE.Color('#4DBFB4');
+const FOAM_COLOR = new THREE.Color('#BDEBE2');
+const GLASS_OFF = new THREE.Color('#C79A52');
+const GLASS_ON = new THREE.Color('#FFE29A');
 
 // water streaks + wake
 let streaks = null;
@@ -182,6 +201,8 @@ function buildArt() {
   const top = new THREE.Mesh(topGeo, flat('#ffffff', { map: woodTexture(w, d) }));
   top.position.y = 0.001;
   art.add(top);
+  deckMats.length = 0;
+  deckMats.push(top.material);
 
   // rim: a raised ring (top paint, darker sides)
   const rimGeo = new THREE.ExtrudeGeometry(
@@ -189,7 +210,9 @@ function buildArt() {
     { depth: D.rimHeight, bevelEnabled: false },
   );
   rimGeo.rotateX(-Math.PI / 2);
-  const rimMesh = new THREE.Mesh(rimGeo, [flat(COLORS.rim), flat(COLORS.hull)]);
+  const rimMats = [flat(COLORS.rim), flat(COLORS.hull)];
+  deckMats.push(...rimMats);
+  const rimMesh = new THREE.Mesh(rimGeo, rimMats);
   outline(rimMesh, 0.03);   // the rim edge gets the soft umber outline too
   art.add(rimMesh);
 
@@ -197,7 +220,9 @@ function buildArt() {
   const hullGeo = new THREE.ExtrudeGeometry(chamferShape(w, d, D.chamfer), { depth: D.hull, bevelEnabled: false });
   hullGeo.rotateX(-Math.PI / 2);
   hullGeo.translate(0, -D.hull - 0.02, 0);
-  art.add(new THREE.Mesh(hullGeo, [flat(COLORS.hull), flat(COLORS.hull)]));
+  const hullMats = [flat(COLORS.hull), flat(COLORS.hull)];
+  deckMats.push(...hullMats);
+  art.add(new THREE.Mesh(hullGeo, hullMats));
 
   // ---- props: all in the corners, all outside the walkable ellipse
   // crates in the two far corners; the left one is piled with mangoes
@@ -225,7 +250,9 @@ function buildArt() {
     art.add(crate);
   }
 
-  // lantern posts in the four corners (unlit by day; step 6 lights them at dusk)
+  // lantern posts in the four corners (unlit by day; lit from dusk: see setLanternLevel)
+  glassMeshes.length = 0;
+  const glowSpots = [];
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const post = new THREE.Group();
@@ -235,6 +262,8 @@ function buildArt() {
       const glass = box(post, 0.3, 0.32, 0.42, COLORS.lampGlass, 0, 2.05, 0, true);   // unlit: step 6 makes it glow
       glass.name = 'lantern-glass';
       glass.userData.keep = true;
+      glassMeshes.push(glass);
+      glowSpots.push({ x: sx * (hw - 0.42), z: sz * (hd - 0.42), px: sx * (hw - 0.42 - 1.5), pz: sz * (hd - 0.42 - 1.3) });
       box(post, 0.46, 0.07, 0.46, COLORS.post, 0, 2.32, 0);
       post.add(blobShadow(0.45, 0.35));
       art.add(post);
@@ -273,11 +302,39 @@ function buildArt() {
   // because step 6 lights it at dusk
   mergeToonProps(art);
 
+  // lantern glow: 4 glow sprites (facing the camera) and 4 warm pools on the deck, ONE additive instanced mesh; opacity = the lantern level
+  const glow = new THREE.InstancedMesh(glowGeo(), glowMaterial(), 8);
+  const m4 = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const sc = new THREE.Vector3();
+  const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(-CONFIG.camera.elevationDeg * DEG, 0, 0));
+  const flatQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+  glowSpots.forEach((g, i) => {
+    sc.set(1.9, 1.9, 1);
+    m4.compose(new THREE.Vector3(g.x, 2.05, g.z), tilt, sc);
+    glow.setMatrixAt(i, m4);
+    q.copy(flatQ);
+    sc.set(4.4, 4.4, 1);
+    m4.compose(new THREE.Vector3(g.px, 0.045, g.pz), q, sc);
+    glow.setMatrixAt(4 + i, m4);
+  });
+  glow.instanceMatrix.needsUpdate = true;
+  glow.frustumCulled = false;
+  glow.renderOrder = 1;
+  glowMesh = glow;
+  art.add(glow);
+  deckBase.length = 0;
+  for (const m of deckMats) deckBase.push(m.color.clone());
+  applyLanternLevel();
+  applyDeckLook();
+
   // walkable ellipse for this orientation
   bounds.halfWidth = hw - D.walkMargin;
   bounds.halfDepth = hd - D.walkMargin;
+  updateWetBand(true);
 
   buildFlow(hw, hd);
+  applyDeckLook();
 }
 
 // ---------------------------------------------------------------- water streaks and wake (not on the deck: they do not bob)
@@ -336,6 +393,142 @@ function updateFlow(dt) {
   foam.instanceMatrix.needsUpdate = true;
 }
 
+// ---------------------------------------------------------------- lantern glow (one soft radial gradient, painted once)
+let glowTex = null;
+let glowGeoShared = null;
+let glowMat = null;
+function glowGeo() {
+  if (!glowGeoShared) { glowGeoShared = new THREE.PlaneGeometry(1, 1); glowGeoShared.userData.shared = true; }
+  return glowGeoShared;
+}
+function glowMaterial() {
+  if (!glowMat) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,214,130,1)');
+    grad.addColorStop(0.35, 'rgba(255,170,70,0.55)');
+    grad.addColorStop(1, 'rgba(255,140,40,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    glowTex = new THREE.CanvasTexture(c);
+    glowTex.colorSpace = THREE.SRGBColorSpace;
+    glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, toneMapped: false });
+    glowMat.userData.shared = true;
+  }
+  return glowMat;
+}
+
+function applyLanternLevel() {
+  if (glowMesh) { glowMesh.material.opacity = Math.min(1, lanternLevel * 0.7); glowMesh.visible = lanternLevel > 0.01; }
+  for (const g of glassMeshes) g.material.color.copy(GLASS_OFF).lerp(GLASS_ON, Math.min(1, lanternLevel));
+}
+
+export function setLanternLevel(level) {
+  lanternLevel = Math.max(0, level);
+  applyLanternLevel();
+}
+
+function applyDeckLook() {
+  for (let i = 0; i < deckMats.length; i++) deckMats[i].color.copy(deckBase[i]).multiply(look.deck);
+  if (streaks) { streaks.material.color.copy(STREAK_COLOR).multiply(look.water); foam.material.color.copy(FOAM_COLOR).multiply(look.water); }
+}
+
+export function setDeckLook({ deck, water }) {
+  if (deck) look.deck.copy(deck);
+  if (water) look.water.copy(water);
+  applyDeckLook();
+}
+
+// ---------------------------------------------------------------- wet edges: a band along the walkable ellipse's edge (one mesh)
+const WET_SEGS = 96;
+let wetMesh = null;
+let wetShown = -1;
+const wetTime = { value: 0 };
+const wetShine = { value: 0 };
+const wetWidth = { value: 0 };
+
+function buildWetBand() {
+  const pos = new Float32Array((WET_SEGS + 1) * 2 * 3);
+  const edge = new Float32Array((WET_SEGS + 1) * 2);
+  const idx = [];
+  for (let i = 0; i <= WET_SEGS; i++) {
+    edge[i * 2] = 0;
+    edge[i * 2 + 1] = 1;
+    if (i < WET_SEGS) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aEdge', new THREE.BufferAttribute(edge, 1));
+  geo.setIndex(idx);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: `
+      attribute float aEdge;
+      varying float vEdge;
+      varying vec2 vPos;
+      void main() {
+        vEdge = aEdge;
+        vPos = position.xz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      precision highp float;
+      uniform float uTime, uShine, uWet;
+      varying float vEdge;
+      varying vec2 vPos;
+      void main() {
+        float a = smoothstep(0.0, 0.5, vEdge);
+        float rim = smoothstep(0.7, 1.0, vEdge);
+        vec3 base = mix(vec3(0.014, 0.04, 0.055), vec3(0.005, 0.016, 0.028), rim);   // (linear values: the output conversion lifts them)
+        float s = 0.5 + 0.5 * sin(dot(vPos, vec2(0.9, 0.4)) * 2.6 + uTime * 1.3 + sin(vPos.y * 1.7 + uTime * 0.6) * 1.4);
+        float glint = pow(s, 10.0) * (0.07 + 0.14 * uShine);
+        vec3 col = base + vec3(0.25, 0.45, 0.6) * glint;
+        gl_FragColor = vec4(col, a * 0.52 * smoothstep(0.0, 0.05, uWet));   // a hairline band at the very start is nearly invisible
+        #include <colorspace_fragment>
+      }`,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+    uniforms: { uTime: wetTime, uShine: wetShine, uWet: wetWidth },
+  });
+  wetMesh = new THREE.Mesh(geo, mat);
+  wetMesh.position.y = 0.012;
+  wetMesh.frustumCulled = false;
+  wetMesh.visible = false;
+  wetMesh.renderOrder = 0;
+  deck.add(wetMesh);
+}
+
+// the run time the deck should look and feel like: 0 on the start screen (golden hour), the run's clock otherwise
+function journeyTime() {
+  return state.screen === 'start' || state.screen === 'loading' ? 0 : state.time;
+}
+
+function updateWetBand(force = false) {
+  if (!wetMesh) return;
+  const f = wetFrac(journeyTime(), CONFIG.journey.wet);
+  if (!force && Math.abs(f - wetShown) < 0.0015) return;
+  wetShown = f;
+  wetWidth.value = f;
+  wetMesh.visible = f > 0.002;
+  if (!wetMesh.visible) return;
+  const a = wetMesh.geometry.attributes.position;
+  const hw = bounds.halfWidth;
+  const hd = bounds.halfDepth;
+  for (let i = 0; i <= WET_SEGS; i++) {
+    const ang = (i / WET_SEGS) * Math.PI * 2;
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    a.setXYZ(i * 2, c * hw * (1 - f), 0, s * hd * (1 - f));
+    a.setXYZ(i * 2 + 1, c * hw * 1.05, 0, s * hd * 1.05);
+  }
+  a.needsUpdate = true;
+}
+
 // ---------------------------------------------------------------- public
 export function buildBarge(s) {
   scene = s;
@@ -343,6 +536,7 @@ export function buildBarge(s) {
   scene.add(bobRoot);
   deck = new THREE.Group();
   bobRoot.add(deck);
+  buildWetBand();
   buildArt();
   if (location.search.includes('debug')) initTestPatch();
 }
@@ -368,6 +562,17 @@ function initTestPatch() {
 export function surfaceAt(x, z) {
   gripOut.grip = 1;
   if (testPatch.on && Math.hypot(x - testPatch.x, z - testPatch.z) <= testPatch.r) gripOut.grip = testPatch.grip;
+  // wet edges: from dusk the outer planks are slippery (never forbidden); a juice patch still wins where they overlap
+  const W = CONFIG.journey.wet;
+  const wf = wetFrac(journeyTime(), W);
+  if (wf > 0 && bounds.halfWidth > 0) {
+    const e = Math.hypot(x / bounds.halfWidth, z / bounds.halfDepth);
+    const lo = 1 - wf;
+    if (e > lo) {
+      const g = 1 - (1 - W.grip) * smooth((e - lo) / W.ramp);
+      if (g < gripOut.grip) gripOut.grip = g;
+    }
+  }
   const J = CONFIG.juice;
   for (let i = 0; i < patches.length; i++) {
     const p = patches[i];
@@ -491,6 +696,14 @@ export function updateBarge(dt) {
   bobRoot.rotation.z = Math.sin(t * w * 0.71 + 1.1) * b.roll * DEG;
   bobRoot.rotation.x = Math.sin(t * w * 0.53 + 2.3) * b.pitch * DEG;
   updateFlow(dt);
+  wetTime.value += dt;
+  wetShine.value = lanternLevel;
+  updateWetBand();
+}
+
+/** The wet band's width now, as a share of the walkable radius (for the ?debug panel). */
+export function wetBandFrac() {
+  return wetFrac(journeyTime(), CONFIG.journey.wet);
 }
 
 export function deckRoot() {

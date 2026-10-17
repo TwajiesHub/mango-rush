@@ -670,6 +670,7 @@ export function updateDrops(dt) {
   tickRings(dt);
   updateJuicePatches(dt);
   if (rng) {
+    if (state.time - nextAt > 3 && !pending) nextAt = state.time;   // (the ?debug N key jumps the clock: no catch-up burst of drops)
     let guard = D.maxPerFrame;
     while (guard-- > 0) {
       if (!pending) {
