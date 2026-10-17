@@ -25,7 +25,8 @@
 //     - Snap turn: if, within TUNE.snapWindow after a dash ends, the input points more than TUNE.snapAngle away from the dash
 //       direction, the player keeps TUNE.snapBoost x speed for TUNE.snapTime. Emits EVENTS.SNAP_TURN.
 //     - Footsteps: the character's stride (by distance) says when a foot plants: EVENTS.FOOTSTEP.
-//     Writes state.dashReadyFrac (0 = just used, 1 = ready). Emits EVENTS.DASH { x, z, dirX, dirZ }.
+//     Writes state.dashReadyFrac (0 = just used, 1 = ready). Emits EVENTS.DASH { x, z, dirX, dirZ } when a dash starts and
+//     EVENTS.DASH_END { x, z } when the burst is over. A Swoop (EVENTS.SWOOP, from scoring.js) refills the dash at once: that is the Chain.
 //     Listens for EVENTS.HIT (invulnerable for CONFIG.player.invulnerable seconds).
 //   The camera reads model.userData.motion = { vx, vz, dashing, dirX, dirZ } (look-ahead and dash kick).
 //
@@ -136,6 +137,7 @@ export function initPlayer(s) {
     if (model && !e.shielded) triggerReaction(model, 'hit');          // a stumble backwards
   });
   on(EVENTS.CATCH, (e) => { if (model && e.points > 0) triggerReaction(model, 'catch'); });   // a hop with arms up
+  on(EVENTS.SWOOP, refillDash);   // a Swoop refills the dash instantly (the Chain)
   on(EVENTS.BEST_PASSED, () => { if (model) triggerReaction(model, 'cheer'); });              // both arms up
 }
 
@@ -248,6 +250,7 @@ export function updatePlayer(dt, input) {
     if (trailT <= 0) { trailT = 0.035; puff(2, 1.4); }
     if (dashT <= 0) {
       dashT = 0;
+      emit(EVENTS.DASH_END, { x, z });
       exitLeft = T.dashExit * Math.min(2.5, 1 / grip);   // a dash carries further on a slippery surface
       exitRate = Math.max(1, (T.dashSpeed - T.speed) / Math.max(0.02, exitLeft));
       sinceDash = 0;

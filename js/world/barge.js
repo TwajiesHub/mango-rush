@@ -8,8 +8,15 @@
 //   deckBounds() -> { halfWidth, halfDepth }   the walkable ellipse (the deck minus CONFIG.deck.walkMargin). Props stay OUTSIDE it.
 //   deckSize() -> { width, depth, orientation }   the deck as built right now
 //   surfaceAt(x, z) -> { grip }   how grippy the deck is at a deck-local point: 1 = normal, 0 = ice. The SAME object every call.
-//                                 It is 1 everywhere for now; steps 5 and 6 add juice splats and wet edges through this hook.
-//                                 With ?debug, the G key toggles a test patch (3 units wide at the deck centre, grip 0.35).
+//                                 Inside a juice patch it is CONFIG.juice.grip, easing back to 1 as the patch fades (step 5b); step 6
+//                                 adds wet edges through the same hook. With ?debug, the G key toggles a test patch (3 units wide at the
+//                                 deck centre, grip 0.35).
+//   cratePositions() -> [{ x, z }]   the two mango crates (deck-local, far corners): the bank spots sit in front of them
+//   plankLayout() -> { width, depth, plankW, butt, step }   how the planks are painted (width and depth of the deck as built, plank
+//                                 width, the length between butt joints, and the stagger per plank): the golden plank lines up with it
+//   addJuicePatch(x, z) ; clearJuicePatches() ; updateJuicePatches(dt) ; juicePatches() -> [{ x, z, life, r }] (read only)   the slippery juice of a rotten
+//                                 mango (step 5b): at most CONFIG.juice.max at once (the oldest is recycled), CONFIG.juice.life seconds,
+//                                 fading over the last CONFIG.juice.fade. A flat amber decal, unlit, just above the deck.
 //   setOrientation('landscape' | 'portrait')   landscape: width along the screen. portrait: width and depth swap so the long
 //                                 side runs into the screen (phones). REBUILDS the deck art (disposing the old one) and is
 //                                 ignored while a run is on (play / paused): main.js calls it between runs only.
@@ -361,7 +368,110 @@ function initTestPatch() {
 export function surfaceAt(x, z) {
   gripOut.grip = 1;
   if (testPatch.on && Math.hypot(x - testPatch.x, z - testPatch.z) <= testPatch.r) gripOut.grip = testPatch.grip;
+  const J = CONFIG.juice;
+  for (let i = 0; i < patches.length; i++) {
+    const p = patches[i];
+    if (p.life <= 0 || Math.hypot(x - p.x, z - p.z) > p.r) continue;
+    const g = 1 - (1 - J.grip) * Math.min(1, p.life / J.fade);   // slippery, then easing back to normal over the last seconds
+    if (g < gripOut.grip) gripOut.grip = g;
+  }
   return gripOut;
+}
+
+// ---- juice patches: a pool of flat amber decals
+const patches = [];
+let patchTex = null;
+function juiceTexture() {
+  if (patchTex) return patchTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  // an irregular edge: a blob made of a wobbling radius, plus a few drops around it
+  const blob = (r0, wob, seed) => {
+    g.beginPath();
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const r = r0 * (1 + wob * Math.sin(a * 3 + seed) * 0.5 + wob * Math.sin(a * 5 + seed * 2.1) * 0.35 + wob * Math.sin(a * 8 + seed * 0.7) * 0.2);
+      const x = 64 + Math.cos(a) * r;
+      const y = 64 + Math.sin(a) * r;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.closePath();
+    g.fill();
+  };
+  g.fillStyle = '#B9701F';
+  blob(52, 0.28, 1.3);
+  g.fillStyle = '#E8A33A';
+  blob(44, 0.26, 1.3);
+  g.fillStyle = '#F6C565';
+  blob(24, 0.3, 4.1);
+  g.fillStyle = '#E8A33A';
+  for (const [x, y, r] of [[14, 40, 5], [112, 82, 4], [96, 16, 3.5], [30, 112, 4]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+  patchTex = new THREE.CanvasTexture(c);
+  patchTex.colorSpace = THREE.SRGBColorSpace;
+  return patchTex;
+}
+
+function makePatchMesh() {
+  const geo = new THREE.PlaneGeometry(2, 2);
+  geo.rotateX(-Math.PI / 2);
+  geo.userData.shared = true;
+  const m = new THREE.Mesh(geo, flat('#ffffff', { map: juiceTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  m.material.userData.shared = true;
+  m.visible = false;
+  m.position.y = 0.02;
+  m.renderOrder = 0;
+  deck.add(m);
+  return m;
+}
+
+export function addJuicePatch(x, z) {
+  const J = CONFIG.juice;
+  let p = patches.find((q) => q.life <= 0);
+  if (!p && patches.length < J.max) {
+    p = { x: 0, z: 0, life: 0, r: J.radius, mesh: makePatchMesh() };
+    patches.push(p);
+  }
+  if (!p) p = patches.reduce((a, b) => (a.life < b.life ? a : b));   // the oldest (the least life left) is recycled
+  p.x = x;
+  p.z = z;
+  p.r = J.radius;
+  p.life = J.life;
+  p.mesh.position.set(x, 0.02, z);
+  p.mesh.rotation.y = (x * 7.3 + z * 3.1) % 6.28;   // a different outline each time, with no rng
+  p.mesh.scale.setScalar(J.radius * 1.12);
+  p.mesh.material.opacity = 0.85;
+  p.mesh.visible = true;
+}
+
+export function clearJuicePatches() {
+  for (const p of patches) { p.life = 0; p.mesh.visible = false; }
+}
+
+export function juicePatches() {
+  return patches;
+}
+
+// drops.js calls this from updateDrops (so a headless run ages the patches too): only while a run is being played
+export function updateJuicePatches(dt) {
+  const J = CONFIG.juice;
+  for (const p of patches) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.life = 0; p.mesh.visible = false; continue; }
+    p.mesh.material.opacity = 0.85 * Math.min(1, p.life / J.fade);   // fades over the last seconds
+  }
+}
+
+export function cratePositions() {
+  const hw = size.width / 2;
+  const hd = size.depth / 2;
+  return [{ x: -(hw - 1.2), z: -(hd - 0.95) }, { x: hw - 1.2, z: -(hd - 0.95) }];
+}
+
+// the planks as painted in woodTexture(): 1.5 wide, butt joints every 4.5 units, staggered by 1.7 per plank
+export function plankLayout() {
+  return { width: size.width, depth: size.depth, plankW: 1.5, butt: 4.5, step: 1.7 };
 }
 
 export function setOrientation(o) {

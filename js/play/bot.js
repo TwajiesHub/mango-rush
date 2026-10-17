@@ -12,6 +12,9 @@
 //
 // The bot: runs away from a coconut that is about to land near it (and dashes at the last moment), otherwise walks to the
 // most valuable fruit nearby that is not under a coconut. It uses only what a player can see.
+// BANKING (step 5b): it banks when the pot is at least BANK_AT (1,500), or when the multiplier is x4 or more and a coconut will land
+// within 1.5 s: it walks to the nearest bank spot, and dashes the last stretch when its dash is ready (a Slam bank). It swoops: when its
+// dash is ready and the fruit it is heading for is a short dash away, it dashes (a Swoop, which also refills the dash).
 
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
@@ -20,6 +23,8 @@ import { createRng } from '../core/rng.js';
 import { resetScoring, updateScoring } from './scoring.js';
 import { resetPlayer, updatePlayer, getPlayer } from './player.js';
 import { resetDrops, updateDrops, getDrops, clearDrops } from './drops.js';
+import { resetBank, updateBank, bankSpots } from './bank.js';
+import { updatePlank } from './plank.js';
 import { deckBounds } from '../world/barge.js';
 
 let simulating = false;
@@ -28,6 +33,7 @@ let speed = 0.9;
 export const isSimulating = () => simulating;
 
 const out = { x: 0, z: 0, dash: false };
+const BANK_AT = 1500;
 
 export function think() {
   const me = getPlayer();
@@ -36,9 +42,12 @@ export function think() {
   let fz = 0;
   let danger = false;
   let urgent = false;
+  let soon = false;   // a coconut lands within 1.5 s
   const r = CONFIG.hitRadius + 0.8;
   for (const it of items) {
-    if (it.type !== 'coconut' || it.landed || it.age < reaction) continue;
+    if (it.type !== 'coconut' || it.landed) continue;
+    if (it.warn - it.age < 1.5) soon = true;
+    if (it.age < reaction) continue;
     const dx = it.x - me.x;
     const dz = it.z - me.z;
     const d = Math.hypot(dx, dz);
@@ -52,34 +61,54 @@ export function think() {
     }
   }
   out.dash = false;
+  const ready = state.dashReadyFrac >= 1;
   if (danger) {
     const len = Math.hypot(fx, fz) || 1;
     out.x = (fx / len) * speed;
     out.z = (fz / len) * speed;
     out.dash = urgent;
-  } else {
+    return out;
+  }
+  // the bank policy: cash in a big pot, or a pot at x4+ with a coconut about to land
+  if (state.pot > 0 && (state.pot >= BANK_AT || (state.multiplier >= 4 && soon))) {
     let best = null;
-    let bestScore = 0;
-    for (const it of items) {
-      if (it.type === 'coconut') continue;
-      let covered = false;
-      for (const c of items) {
-        if (c.type === 'coconut' && !c.landed && Math.hypot(c.x - it.x, c.z - it.z) < r) { covered = true; break; }
-      }
-      if (covered) continue;
-      const d = Math.hypot(it.x - me.x, it.z - me.z);
-      const value = (it.type === 'golden' ? 5 : 1) / (d + 1.5);
-      if (value > bestScore) { bestScore = value; best = it; }
+    let bd = 1e9;
+    for (const sp of bankSpots()) {
+      const d = Math.hypot(sp.x - me.x, sp.z - me.z);
+      if (d < bd) { bd = d; best = sp; }
     }
     if (best) {
       const dx = best.x - me.x;
       const dz = best.z - me.z;
-      const d = Math.hypot(dx, dz);
-      out.x = d > 0.25 ? (dx / d) * speed : 0;
-      out.z = d > 0.25 ? (dz / d) * speed : 0;
-    } else {
-      out.x = out.z = 0;
+      out.x = (dx / (bd || 1)) * speed;
+      out.z = (dz / (bd || 1)) * speed;
+      out.dash = ready && bd > best.r + 0.4 && bd < best.r + 2.4;   // the last stretch is a dash: a Slam bank
+      return out;
     }
+  }
+  let best = null;
+  let bestScore = 0;
+  for (const it of items) {
+    if (it.type === 'coconut') continue;
+    let covered = false;
+    for (const c of items) {
+      if (c.type === 'coconut' && !c.landed && Math.hypot(c.x - it.x, c.z - it.z) < r) { covered = true; break; }
+    }
+    if (covered) continue;
+    const d = Math.hypot(it.x - me.x, it.z - me.z);
+    const value = (it.type === 'golden' ? 5 : 1) / (d + 1.5);
+    if (value > bestScore) { bestScore = value; best = it; }
+  }
+  if (best) {
+    const dx = best.x - me.x;
+    const dz = best.z - me.z;
+    const d = Math.hypot(dx, dz);
+    out.x = d > 0.25 ? (dx / d) * speed : 0;
+    out.z = d > 0.25 ? (dz / d) * speed : 0;
+    // a Swoop: a ready dash at a mango that is a short dash away, and low enough to catch
+    out.dash = ready && (best.type === 'mango' || best.type === 'golden') && d > 1.4 && d < 3.4 && best.mesh.position.y < CONFIG.catchMaxHeight + 0.6 && best.age >= best.warn * 0.6;
+  } else {
+    out.x = out.z = 0;
   }
   return out;
 }
@@ -103,15 +132,22 @@ export function simulate(opts = {}) {
     state.screen = 'play';
     resetScoring();
     resetPlayer();
+    resetBank();
     resetDrops(createRng(seed + i));
     while (state.lives > 0 && state.time < maxSeconds) {
       state.time += dt;
       const input = think();
       updatePlayer(dt, input);
       updateDrops(dt);
+      updatePlank(dt);
+      updateBank(dt);
       updateScoring(dt);
     }
-    rows.push({ seed: seed + i, survived: +state.time.toFixed(1), hits, mangoes: state.stats.mangoes, near: state.stats.nearMisses, score: state.score, died: state.lives <= 0 });
+    rows.push({
+      seed: seed + i, survived: +state.time.toFixed(1), hits, mangoes: state.stats.mangoes, near: state.stats.nearMisses, score: state.score, died: state.lives <= 0,
+      banks: state.stats.banks, slams: state.stats.slams, bestBank: state.stats.bestBank, swoops: state.stats.swoops, bestChain: state.stats.bestChain,
+      potLostTotal: state.stats.potLostTotal, pot: state.pot,
+    });
   }
   off();
   clearDrops();
@@ -122,6 +158,7 @@ export function simulate(opts = {}) {
     deck: { halfWidth: b.halfWidth, halfDepth: b.halfDepth },
     runs: rows.length, diedBefore: rows.filter((r) => r.died).length,
     meanSurvived: mean('survived'), meanMangoes: mean('mangoes'), meanScore: mean('score'),
+    meanBanks: mean('banks'), meanSlams: mean('slams'), meanPotLost: mean('potLostTotal'), meanSwoops: mean('swoops'), meanBestChain: mean('bestChain'),
     hitsPerMinute: +(rows.reduce((s, r) => s + r.hits, 0) / minutes).toFixed(2),
     nearMissesPerMinute: +(rows.reduce((s, r) => s + r.near, 0) / minutes).toFixed(2),
     rows,

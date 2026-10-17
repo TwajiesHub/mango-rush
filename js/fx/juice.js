@@ -61,7 +61,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on } from '../core/events.js';
-import TEXT from '../content/text.js';
+import TEXT, { fill } from '../content/text.js';
 
 const MAX_PARTICLES = 256;
 const POPUP_POOL = 12;
@@ -323,6 +323,18 @@ function subscribe() {
     let text = `+${e.points}`;
     if (e.multiplier > 1) text += ` x${e.multiplier}`;
     popup(text, e, golden ? 'gold' : 'normal');
+    if (e.plank) popup(TEXT.popups.goldenPlank.toUpperCase(), { x: e.x, y: e.y + 1.9, z: e.z }, 'gold');   // a catch made on the golden plank
+  });
+  // skills (step 5b): small pop-ups here, the big effects are step 8
+  on(EVENTS.SWOOP, (e) => {
+    popup(TEXT.popups.swoop.toUpperCase(), { x: e.x, y: 2.2, z: e.z }, 'perfect');
+    if (e.chain >= 2) popup(fill(TEXT.popups.chain, { n: e.chain }).toUpperCase(), { x: e.x, y: 3.0, z: e.z }, 'gold');
+  });
+  on(EVENTS.SLAM_BANK, (e) => popup(TEXT.popups.slamBank.toUpperCase(), { x: e.x, y: 2.4, z: e.z }, 'perfect'));
+  on(EVENTS.POT_BANKED, (e) => {
+    if (e.auto) return;
+    feel('catch', { x: e.x, y: 0.4, z: e.z });
+    popup(`${TEXT.popups.banked.toUpperCase()} +${e.amount.toLocaleString('en-US')}`, { x: e.x, y: 1.6, z: e.z }, 'gold');
   });
   on(EVENTS.NEAR_MISS, (e) => {
     feel('nearMiss', { x: e.x, y: 0.4, z: e.z });

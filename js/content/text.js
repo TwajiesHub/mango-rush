@@ -80,6 +80,11 @@ const TEXT = {
     shield: 'Calabash shield',
     rotten: 'Rotten!',
     stepUp: 'x{multiplier}',
+    swoop: 'Swoop!',
+    chain: 'Chain x{n}',                                     // n >= 2
+    slamBank: 'Slam bank +10%',
+    goldenPlank: 'Golden plank x2',
+    banked: 'Banked',
   },
 
   hud: {
@@ -89,6 +94,9 @@ const TEXT = {
     behindBest: '{score} to beat your best',                 // max 26
     dashReady: 'Dash ready',
     dashReadyKey: 'Space · Dash ready',   // on desktop, where Space dashes
+    inPot: '+{pot} in the pot',                              // max 24
+    potLost: '-{pot}',
+    bankHint: 'Dash into a crate to bank your pot',          // the one-time hint (max 40)
     dash: 'Dash',                         // while the dash is recharging (the pill fills up)
     dashKey: 'Space · Dash',
     lives: 'Lives',
@@ -113,6 +121,13 @@ const TEXT = {
     },
     newBest: 'New best',
     stats: { mangoes: 'Mangoes', bestCombo: 'Best combo', nearMisses: 'Near misses', survived: 'Survived' },
+    lostInPot: 'Lost in the pot: {pot}',                     // only when above 0; plain words, no guilt
+    skills: {                                                // the skills line: items that are 0 are left out
+      swoop: ['{n} swoop', '{n} swoops'],
+      chain: 'best chain x{n}',
+      perfect: ['{n} perfect dodge', '{n} perfect dodges'],
+      slam: ['{n} slam bank', '{n} slam banks'],
+    },
     nextMedal: 'Next: {medal}',
     toGo: '{score} to go',
     playAgain: 'Play again',

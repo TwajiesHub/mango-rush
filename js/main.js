@@ -8,20 +8,22 @@ import { state } from './core/state.js';
 import { EVENTS, on, emit } from './core/events.js';
 import { CONFIG, phaseAt, tuneIsChanged } from './core/config.js';
 import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
-import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone } from './core/store.js';
+import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone, bankHintDone, setBankDone } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
 import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, warmUp, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
 import { createFrameClock } from './core/frameclock.js';
-import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation } from './world/barge.js';
+import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation, juicePatches } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose } from './play/player.js';
 import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop } from './play/drops.js';
+import { initBank, resetBank, updateBank, bankSpots } from './play/bank.js';
+import { initPlank, updatePlank, getPlankDebug } from './play/plank.js';
 import { resetHappenings, updateHappenings } from './play/happenings.js';
 import { resetScoring, updateScoring, endRun, scoringSelfTest } from './play/scoring.js';
 import { initJuice, timeScale, updateJuice, setPlayerObject } from './fx/juice.js';
 import { initAudio, unlockAudio, setMusicEnabled, setSfxEnabled, updateAudio } from './audio/audio.js';
-import { initHud, showHud, showTouchControls, updateHud, setPortrait, setJoystick } from './ui/hud.js';
+import { initHud, showHud, showTouchControls, updateHud, setPortrait, setJoystick, showBanner } from './ui/hud.js';
 import { initScreens, showLoading, showStart, showWarmupHint, showCountdown, showPause, showGameOver, showLeaderboard, hideScreens } from './ui/screens.js';
 import { createShareCard, shareScore } from './ui/sharecard.js';
 import TEXT from './content/text.js';
@@ -74,6 +76,8 @@ async function boot() {
   buildBarge(scene);
   initPlayer(deckRoot());
   initDrops(deckRoot());
+  initBank(deckRoot());
+  initPlank(deckRoot());
 
   await loadPlayer();
   warmUp();   // compile every shader now, behind the loading screen
@@ -141,9 +145,12 @@ async function startRun(mode) {
   const rng = createRng(seed);
   state.time = 0;
   state.phase = 'golden';
+  fitDeckToScreen();   // the deck's shape first: the bank spots and the golden plank are laid out on it
   resetScoring();
   resetPlayer();
-  resetDrops(rng);
+  resetBank();
+  resetDrops(rng);   // (also chooses the golden plank's segments)
+  hintShown = false;
   resetHappenings(createRng(seed ^ 0x9e3779b9));
   resetJourney();
   fitDeckToScreen();
@@ -173,6 +180,15 @@ function resume() {
   setScreen('play');
   emit(EVENTS.RESUME, {});
 }
+
+// the one-time teaching hint: the first time (on this device) the pot passes 500, once per run, until the player has banked for the first time
+let hintShown = false;
+on(EVENTS.POT_CHANGE, (e) => {
+  if (hintShown || state.screen !== 'play' || e.pot < CONFIG.bank.hintPot || bankHintDone()) return;
+  hintShown = true;
+  showBanner(TEXT.hud.bankHint, CONFIG.bank.hintMs);
+});
+on(EVENTS.POT_BANKED, () => { if (!botModule?.isSimulating()) setBankDone(); });
 
 on(EVENTS.RUN_END, (summary) => {
   if (botModule?.isSimulating()) return;   // the ?debug simulator plays whole runs headlessly
@@ -254,6 +270,8 @@ function frame(ts) {
     updatePlayer(dt, input);
     updateHappenings(dt);
     updateDrops(dt);
+    updatePlank(dt);
+    updateBank(dt);
     updateScoring(dt);
     updateHud();
   } else if (state.screen !== 'paused') { idlePlayer(realDt, state.screen);
@@ -296,7 +314,7 @@ function benchBusyScene(pr = 1.5, frames = 90) {
 function getPerf() {
   const s = clock.stats();
   const q = getQualityInfo();
-  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer, drops: getDropDebug() };
+  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer, drops: getDropDebug(), plank: getPlankDebug(), banks: bankSpots(), pot: state.pot, stats: state.stats, patches: juicePatches().filter((p) => p.life > 0).map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1), life: +p.life.toFixed(1) })) };
 }
 
 // ---------------------------------------------------------------- debug (only with ?debug in the URL)

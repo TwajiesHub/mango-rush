@@ -1,9 +1,30 @@
-// Mango Rush — scoring, combo, lives and the adrenaline meters.   OWNER: Claude Code  ·  STATUS: done (step 1)
+// Mango Rush — scoring, the pot, skills, combo, lives and the adrenaline meters.   OWNER: Claude Code  ·  STATUS: step 5b (the pot)
 //
 // Pure game logic: NO three.js, NO DOM. It writes the scoring fields of `state`
 // (see core/state.js) and announces results with emit() (see core/events.js).
 //
-// IMPORTS ALLOWED: '../core/config.js' (CONFIG), '../core/state.js' (state), '../core/events.js' (EVENTS, emit)
+// IMPORTS ALLOWED: '../core/config.js' (CONFIG), '../core/state.js' (state), '../core/events.js' (EVENTS, emit, on)
+//
+// THE POT (step 5b). Every point earned (catches, near misses, Perfect dodges, skill bonuses) goes into state.pot, NOT state.score.
+// state.score is the BANKED score: it only ever goes up, and it is what the best, the medals, aheadOfBest, BEST_PASSED and the
+// leaderboard use. The pot leaves in one of three ways:
+//   - bankPot({ slam, x, z }): the player walked (or, slam: dashed) into a bank spot (play/bank.js). Adds the pot to the score (a Slam
+//     adds 10% first, rounded), empties it, and costs the momentum: multiplier x1, comboStep 0, combo timer 0.
+//   - auto-bank: the combo ends naturally (the window plus the grace run out at x1 with no catch): the pot banks by itself, no
+//     Slam bonus, no loss of momentum (there is none left). Any points earned while no combo is running start a combo timer, so a
+//     pot made only of near misses banks the same way.
+//   - a coconut HIT loses the whole pot (the calabash shield blocks the hit, so the pot is safe). A rotten mango only drops the combo.
+//   At the end of the run an unbanked pot is lost.
+// RunSummary.potLost is ONLY what was lost at the end of the run (the final hit, or an unbanked pot when the run is ended).
+// stats.potLostTotal is the running total of every loss (for the bot and ?debug; never shown to players).
+//
+// SKILLS. fruitCaught({ ..., dashing, onPlank }): a mango caught while dashing is a SWOOP (+50% for that catch); a catch made while
+// standing on the golden plank pays x2 (before the multiplier). A Swoop emits SWOOP (player.js refills the dash: that is the Chain
+// engine). The chain counts up when a Swoop is made in a NEW dash (one that started after the previous Swoop); it resets when a dash
+// ends without a Swoop (EVENTS.DASH / EVENTS.DASH_END, which this module listens to).
+//   bankPot({ slam = false, x = 0, z = 0, auto = false }) -> number   the amount added to the score (0 when the pot was empty)
+//   Events: POT_CHANGE { pot }, POT_BANKED { amount, slam, auto, x, z }, POT_LOST { amount, x, z }, SWOOP { x, z, points, chain },
+//           SLAM_BANK { x, z, amount, bonus }.   CATCH also carries { swoop, plank, chain }.
 //
 // CONTRACT (keep these exact exports and signatures):
 //
@@ -70,7 +91,7 @@
 
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
-import { EVENTS, emit } from '../core/events.js';
+import { EVENTS, emit, on } from '../core/events.js';
 
 const S = CONFIG.scoring;
 
@@ -80,6 +101,11 @@ let graceLeft = 0;
 let bestPassed = false;
 let ended = false;
 let silent = false;     // the self-check runs with events switched off
+let dashId = 0;         // counts the dashes of this run (Chain)
+let lastSwoopDash = -1;
+let chain = 0;
+let potLostEnd = 0;     // lost at the end of the run: what the game-over screen shows
+let lastHitLoss = 0;
 
 function fire(name, payload) { if (!silent) emit(name, payload); }
 
@@ -95,7 +121,16 @@ export function resetScoring() {
   state.heartbeat = false;
   state.shield = false;
   state.aheadOfBest = state.best > 0 ? -state.best : null;
-  state.stats = { mangoes: 0, golden: 0, nearMisses: 0, perfectDodges: 0, bestMultiplier: 1 };
+  state.pot = 0;
+  state.stats = {
+    mangoes: 0, golden: 0, nearMisses: 0, perfectDodges: 0, bestMultiplier: 1,
+    banks: 0, slams: 0, bestBank: 0, swoops: 0, bestChain: 0, potLostTotal: 0,
+  };
+  dashId = 0;
+  lastSwoopDash = -1;
+  chain = 0;
+  potLostEnd = 0;
+  lastHitLoss = 0;
   comboLeft = 0;
   inGrace = false;
   graceLeft = 0;
@@ -109,7 +144,9 @@ function dropStep() {
   if (dropped) state.multiplier -= 1;
   state.comboStep = 0;
   inGrace = false;
-  comboLeft = state.multiplier > 1 ? S.comboWindow * 0.5 : 0;
+  // draining from x2 to x1 gives one more half window at x1 while there is a pot to keep; at x1 the combo has ended
+  comboLeft = state.multiplier > 1 || (dropped && state.pot > 0) ? S.comboWindow * 0.5 : 0;
+  if (!dropped && comboLeft === 0 && state.pot > 0) bankPot({ auto: true });   // the combo ended naturally: the pot banks by itself
   if (dropped || hadStep) {
     fire(EVENTS.COMBO_CHANGE, { multiplier: state.multiplier, step: 0, stepUp: false, stepDown: dropped });
   }
@@ -147,14 +184,23 @@ export function updateScoring(dt) {
   }
 }
 
-// base x multiplier, then the Madness and last-life bonuses, rounded.
-function award(base) {
-  let pts = base * state.multiplier;
+// base x factor x multiplier, then the Madness and last-life bonuses, rounded.
+function award(base, factor = 1) {
+  let pts = base * factor * state.multiplier;
   if (state.madnessActive) pts *= CONFIG.madness.pointsMultiplier;
   if (state.heartbeat) pts *= S.heartbeatBonus;
   return Math.round(pts);
 }
 
+// points earned go to the POT. When no combo is running they start a combo timer, so the pot still banks by itself at the end of it.
+function addPot(points) {
+  if (points <= 0) return;
+  state.pot += points;
+  if (comboLeft <= 0 && !inGrace) { comboLeft = S.comboWindow; state.comboTimerFrac = 1; }
+  fire(EVENTS.POT_CHANGE, { pot: state.pot });
+}
+
+// banked points: the score only ever goes up
 function addScore(points) {
   state.score += points;
   if (state.best > 0) {
@@ -166,10 +212,11 @@ function addScore(points) {
   }
 }
 
-export function fruitCaught({ type, x, y, z }) {
+export function fruitCaught({ type, x, y, z, dashing: dash = false, onPlank = false }) {
   if (ended) return;
   if (type === 'mango' || type === 'golden') {
-    const points = award(type === 'golden' ? S.golden : S.mango);
+    const swoop = !!dash;
+    const points = award(type === 'golden' ? S.golden : S.mango, (swoop ? S.swoopBonus : 1) * (onPlank ? S.plankMult : 1));
     state.stats.mangoes += 1;
     if (type === 'golden') state.stats.golden += 1;
     state.comboStep += 1;
@@ -184,9 +231,16 @@ export function fruitCaught({ type, x, y, z }) {
     inGrace = false;
     state.comboTimerFrac = 1;
     if (state.madnessActive) state.madnessTimeLeft += CONFIG.madness.perCatchBonus;
-    addScore(points);
+    addPot(points);
+    if (swoop) {
+      state.stats.swoops += 1;
+      if (chain === 0 || lastSwoopDash !== dashId) chain += 1;   // a Swoop in a new dash extends the chain
+      lastSwoopDash = dashId;
+      state.stats.bestChain = Math.max(state.stats.bestChain, chain);
+    }
     fire(EVENTS.COMBO_CHANGE, { multiplier: state.multiplier, step: state.comboStep, stepUp, stepDown: false });
-    fire(EVENTS.CATCH, { type, x, y, z, points, multiplier: state.multiplier });
+    fire(EVENTS.CATCH, { type, x, y, z, points, multiplier: state.multiplier, swoop, plank: !!onPlank, chain });
+    if (swoop) fire(EVENTS.SWOOP, { x, z, points, chain });
   } else if (type === 'rotten') {
     const dropped = state.multiplier > 1;
     if (dropped) state.multiplier -= 1;
@@ -200,6 +254,49 @@ export function fruitCaught({ type, x, y, z }) {
   }
 }
 
+function loseHitPot(x, z) {
+  lastHitLoss = state.pot;
+  if (state.pot <= 0) return;
+  const amount = state.pot;
+  state.pot = 0;
+  state.stats.potLostTotal += amount;
+  fire(EVENTS.POT_LOST, { amount, x, z });
+  fire(EVENTS.POT_CHANGE, { pot: 0 });
+}
+
+/** Add the pot to the score. slam: +10% first (rounded). Returns the amount banked (0 when the pot was empty). */
+export function bankPot({ slam = false, x = 0, z = 0, auto = false } = {}) {
+  if (ended || state.pot <= 0) return 0;
+  const pot = state.pot;
+  const isSlam = slam && !auto;
+  const amount = isSlam ? Math.round(pot * (1 + S.slamBonus)) : pot;
+  state.pot = 0;
+  state.stats.banks += 1;
+  if (isSlam) state.stats.slams += 1;
+  state.stats.bestBank = Math.max(state.stats.bestBank, amount);
+  if (!auto) {
+    // banking costs the momentum: that is the decision
+    const hadCombo = state.multiplier > 1 || state.comboStep > 0;
+    const dropped = state.multiplier > 1;
+    state.multiplier = 1;
+    state.comboStep = 0;
+    comboLeft = 0;
+    inGrace = false;
+    state.comboTimerFrac = 0;
+    if (hadCombo) fire(EVENTS.COMBO_CHANGE, { multiplier: 1, step: 0, stepUp: false, stepDown: dropped });
+  }
+  addScore(amount);
+  fire(EVENTS.POT_CHANGE, { pot: 0 });
+  fire(EVENTS.POT_BANKED, { amount, slam: isSlam, auto, x, z });
+  if (isSlam) fire(EVENTS.SLAM_BANK, { x, z, amount, bonus: amount - pot });
+  return amount;
+}
+
+on(EVENTS.DASH, () => { dashId += 1; });
+on(EVENTS.DASH_END, () => {
+  if (lastSwoopDash !== dashId) chain = 0;   // a dash that ended without a Swoop breaks the chain
+});
+
 export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
   if (ended) return 'none';
   const r = CONFIG.hitRadius * (big ? 2.5 : 1);
@@ -212,6 +309,7 @@ export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
       return 'shielded';
     }
     state.lives -= 1;
+    loseHitPot(x, z);
     state.multiplier = 1;
     state.comboStep = 0;
     comboLeft = 0;
@@ -230,6 +328,7 @@ export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
     } else if (state.lives <= 0) {
       if (state.heartbeat) fire(EVENTS.HEARTBEAT_END, {});
       state.heartbeat = false;
+      potLostEnd += lastHitLoss;   // the pot lost on the final hit is the one the game-over screen mentions
       endRun('lives');
     }
     return 'hit';
@@ -237,14 +336,14 @@ export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
   if (perfect) {
     const points = award(S.perfectDodge);
     state.stats.perfectDodges += 1;
-    addScore(points);
+    addPot(points);
     fire(EVENTS.PERFECT_DODGE, { x, z, points });
     return 'perfect';
   }
   if (dist <= r + CONFIG.nearMissBand) {
     const points = award(S.nearMiss);
     state.stats.nearMisses += 1;
-    addScore(points);
+    addPot(points);
     if (comboLeft > 0 || inGrace || state.multiplier > 1 || state.comboStep > 0) {
       comboLeft = Math.min(S.comboWindow, comboLeft + S.nearMissTimeBonus);
       inGrace = false;
@@ -257,6 +356,14 @@ export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
 
 export function endRun(reason = 'lives') {
   if (ended) return null;
+  if (state.pot > 0) {   // an unbanked pot is lost when the run ends
+    const amount = state.pot;
+    state.pot = 0;
+    potLostEnd += amount;
+    state.stats.potLostTotal += amount;
+    fire(EVENTS.POT_LOST, { amount, x: 0, z: 0 });
+    fire(EVENTS.POT_CHANGE, { pot: 0 });
+  }
   ended = true;
   let medal = 'none';
   let nextMedal = null;
@@ -274,6 +381,13 @@ export function endRun(reason = 'lives') {
     nearMisses: state.stats.nearMisses,
     perfectDodges: state.stats.perfectDodges,
     bestMultiplier: state.stats.bestMultiplier,
+    potLost: potLostEnd,
+    banks: state.stats.banks,
+    slams: state.stats.slams,
+    bestBank: state.stats.bestBank,
+    swoops: state.stats.swoops,
+    bestChain: state.stats.bestChain,
+    potLostTotal: state.stats.potLostTotal,
     medal,
     nextMedal,
     isBest: false,
@@ -297,11 +411,11 @@ export function scoringSelfTest() {
     state.best = 0; state.mode = 'free'; state.time = 0; state.phase = 'golden';
     resetScoring();
     mango();
-    check('first mango = 100', state.score === 100);
+    check('first mango = 100, into the pot', state.pot === 100 && state.score === 0);
     for (let i = 0; i < 4; i++) mango();
-    check('5 catches -> x2', state.multiplier === 2 && state.comboStep === 0 && state.score === 500);
+    check('5 catches -> x2', state.multiplier === 2 && state.comboStep === 0 && state.pot === 500);
     fruitCaught({ type: 'golden', x: 0, y: 0, z: 0 });
-    check('golden at x2 = 1000', state.score === 1500);
+    check('golden at x2 = 1000', state.pot === 1500);
     updateScoring(S.comboWindow + 0.01);
     check('timer empty -> grace, still x2', state.multiplier === 2 && state.comboTimerFrac === 0);
     updateScoring(S.comboGrace + 0.01);
@@ -314,9 +428,9 @@ export function scoringSelfTest() {
     check('hit costs a life', land(0.2) === 'hit' && state.lives === 2);
     land(0.2);
     check('last life -> heartbeat', state.lives === 1 && state.heartbeat);
-    const before = state.score;
+    const before = state.pot;
     mango();
-    check('heartbeat bonus x1.5', state.score - before === 150);
+    check('heartbeat bonus x1.5', state.pot - before === 150);
     land(0.2);
     check('0 lives ends the run', ended && state.lives === 0);
     check('endRun fires once', endRun() === null);
@@ -326,6 +440,22 @@ export function scoringSelfTest() {
     check('x5 after 20 catches', state.multiplier === 5);
     for (let i = 0; i < 70; i++) { updateScoring(0.1); if (i % 10 === 0) mango(); }
     check('madness starts after fillSeconds at x5', state.madnessActive);
+    // the pot (step 5b): bank, slam, loss on a hit, the shield, the end of the run
+    resetScoring();
+    mango();
+    check('pot is not score', state.pot === 100 && state.score === 0);
+    check('bank adds the pot', bankPot() === 100 && state.score === 100 && state.pot === 0 && state.multiplier === 1);
+    mango(); mango();
+    check('slam adds 10%', bankPot({ slam: true }) === 220 && state.score === 320);
+    mango();
+    land(0.2);
+    check('a hit loses the pot', state.pot === 0 && state.score === 320 && state.stats.potLostTotal === 100);
+    mango();
+    fruitCaught({ type: 'shield', x: 0, y: 0, z: 0 });
+    land(0.2);
+    check('the shield keeps the pot', state.pot === 100);
+    updateScoring(S.comboWindow + S.comboGrace + 0.01);
+    check('a combo that ends banks the pot', state.pot === 0 && state.score === 420);
   } catch (err) {
     failures.push('threw: ' + err.message);
   } finally {

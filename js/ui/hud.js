@@ -25,6 +25,13 @@
 //                     (pointerdown -> actions.onDash). The pause button moves under the score on phones.
 //       shield      : when state.shield, a small woven calabash icon beside the lives
 //
+//   THE POT (step 5b): the big score is the BANKED score (state.score). Under it a saffron chip "+3,200 IN THE POT" (TEXT.hud.inPot) shows
+//   while state.pot > 0 and grows a little as the pot grows. POT_BANKED: the amount flies up into the score and the score counts up over
+//   ~400 ms. POT_LOST: the chip shatters ("-3,200" in vermilion) and goes. Reduced motion: no flying, shattering or counting.
+//   (Step 9 styles all of this properly.)
+//
+//   showBanner(text, ms) -> void   the banner strip (the one-time bank hint uses it)
+//
 //   showHud(visible: boolean) -> void
 //   showTouchControls(visible: boolean) -> void
 //
@@ -69,9 +76,14 @@ let el = {};
 let actions = {};
 const last = {
   score: -1, lives: -1, mult: -1, step: -1, timer: -1, madness: -1, ahead: undefined, time: '', phase: '',
-  dash: -1, shield: null,
+  dash: -1, shield: null, pot: -1,
 };
 let bannerTimer = 0;
+let flyTimer = 0;
+let scoreShown = 0;       // the score as drawn: it counts up to state.score after a bank
+let scoreFrom = 0;
+let scoreTo = 0;
+let scoreT0 = -1;         // performance.now() when the count-up began (-1 = not counting)
 
 export function initHud(r, a) {
   root = r;
@@ -99,7 +111,9 @@ export function initHud(r, a) {
     <div class="hud__score">
       <span class="label">${TEXT.hud.score}</span>
       <b class="score__n">0</b>
+      <span class="pot__chip" hidden></span>
       <span class="score__chip" hidden></span>
+      <span class="pot__fly" aria-hidden="true" hidden></span>
     </div>
     <div class="hud__time"><span class="time__phase"></span><b class="time__clock">0:00</b></div>
     <div class="hud__banner" role="status" hidden></div>
@@ -117,7 +131,7 @@ export function initHud(r, a) {
     hearts: Array.from(root.querySelectorAll('.heart')), shield: q('.hud__shield'),
     combo: q('.hud__combo'), ring: q('.gauge__ring'), x: q('.combo__x'),
     pips: Array.from(root.querySelectorAll('.combo__pips i')), madness: q('.combo__madness i'),
-    score: q('.score__n'), chip: q('.score__chip'), phase: q('.time__phase'), clock: q('.time__clock'),
+    score: q('.score__n'), chip: q('.score__chip'), pot: q('.pot__chip'), fly: q('.pot__fly'), phase: q('.time__phase'), clock: q('.time__clock'),
     banner: q('.hud__banner'), dash: q('.hud__dash'), dashFill: q('.hud__dash i'), dashText: q('.dash__text'),
     touch: q('.touch'), joy: q('.touch__joy'), knob: q('.touch__joy i'),
   };
@@ -161,6 +175,24 @@ export function initHud(r, a) {
     setTimeout(() => el.score.classList.remove('is-best'), 2000);
   });
   on(EVENTS.RUN_END, () => document.body.classList.remove('is-heartbeat', 'is-madness'));
+  on(EVENTS.POT_BANKED, (e) => flyText(fill(TEXT.hud.inPot, { pot: num(e.amount) }), 'is-bank'));
+  on(EVENTS.POT_LOST, (e) => { if (e.amount > 0) flyText(fill(TEXT.hud.potLost, { pot: num(e.amount) }), 'is-lost'); });
+}
+
+// a short-lived piece of text over the pot chip: it flies into the score (banked) or shatters (lost)
+function flyText(text, cls) {
+  if (!el.fly || state.settings.reducedMotion) return;
+  el.fly.textContent = text;
+  el.fly.className = 'pot__fly';
+  el.fly.hidden = false;
+  void el.fly.offsetWidth;
+  el.fly.classList.add(cls);
+  clearTimeout(flyTimer);
+  flyTimer = setTimeout(() => { el.fly.hidden = true; }, 700);
+}
+
+export function showBanner(text, ms) {
+  banner(text, ms, false);
 }
 
 function pulse(node, cls) {
@@ -183,7 +215,11 @@ function reset() {
   el.hearts.forEach((h) => h.classList.remove('is-lost'));
   el.banner.hidden = true;
   el.flash.classList.remove('is-on');
-  Object.assign(last, { score: -1, lives: -1, mult: -1, step: -1, timer: -1, madness: -1, ahead: undefined, time: '', phase: '', dash: -1, shield: null });
+  Object.assign(last, { score: -1, lives: -1, mult: -1, step: -1, timer: -1, madness: -1, ahead: undefined, time: '', phase: '', dash: -1, shield: null, pot: -1 });
+  scoreShown = 0;
+  scoreT0 = -1;
+  if (el.pot) el.pot.hidden = true;
+  if (el.fly) el.fly.hidden = true;
   paintDashReady();
 }
 
@@ -226,7 +262,25 @@ const num = (n) => n.toLocaleString('en-US');
 export function updateHud() {
   if (!root || root.hidden) return;
   const s = state;
-  if (s.score !== last.score) { last.score = s.score; el.score.textContent = num(s.score); }
+  if (s.score !== last.score) {
+    last.score = s.score;
+    if (s.settings.reducedMotion || s.score < scoreShown || s.score - scoreShown < 1) { scoreShown = s.score; scoreT0 = -1; el.score.textContent = num(s.score); }
+    else { scoreFrom = scoreShown; scoreTo = s.score; scoreT0 = performance.now(); }   // a bank: count up over ~400 ms
+  }
+  if (scoreT0 >= 0) {
+    const u = Math.min(1, (performance.now() - scoreT0) / 400);
+    scoreShown = Math.round(scoreFrom + (scoreTo - scoreFrom) * (1 - (1 - u) ** 3));
+    el.score.textContent = num(scoreShown);
+    if (u >= 1) scoreT0 = -1;
+  }
+  if (s.pot !== last.pot) {
+    last.pot = s.pot;
+    el.pot.hidden = s.pot <= 0;
+    if (s.pot > 0) {
+      el.pot.textContent = fill(TEXT.hud.inPot, { pot: num(s.pot) }).toUpperCase();
+      el.pot.style.setProperty('--grow', (1 + Math.min(0.3, s.pot / 12000)).toFixed(3));   // it grows a little as the pot grows
+    }
+  }
   if (s.lives !== last.lives) {
     last.lives = s.lives;
     el.hearts.forEach((h, i) => h.classList.toggle('is-lost', i >= s.lives));

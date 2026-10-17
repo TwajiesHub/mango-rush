@@ -17,6 +17,9 @@
 //
 //   setWarmupDone() -> void
 //
+//   bankHintDone() -> boolean   true once the player has banked a pot on this DEVICE (key "mango-rush:device"): the one-time
+//   setBankDone() -> void       "Dash into a crate to bank your pot" hint is never shown again after that.
+//
 //   loadSettings() -> { music: boolean, sfx: boolean, reducedMotion: boolean }
 //     Defaults: music true, sfx true, reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 //     Settings are saved per device, not per user: key "mango-rush:settings".
@@ -94,6 +97,16 @@ export function recordRun(summary) {
 export function setWarmupDone() {
   memory.warmupDone = true;
   save();
+}
+
+let bankDone = null;   // null = not read yet
+export function bankHintDone() {
+  if (bankDone === null) bankDone = readJson('mango-rush:device')?.bankDone === true;
+  return bankDone;
+}
+export function setBankDone() {
+  bankDone = true;
+  writeJson('mango-rush:device', { ...(readJson('mango-rush:device') || {}), bankDone: true });
 }
 
 export function loadSettings() {

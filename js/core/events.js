@@ -51,9 +51,15 @@ export const EVENTS = Object.freeze({
   HEARTBEAT_START: 'heartbeat:start', // {}   (last life)
   HEARTBEAT_END: 'heartbeat:end',   // {}
   BEST_PASSED: 'best:passed',       // { score }
+  POT_CHANGE: 'pot:change',         // { pot }   the pot changed
+  POT_BANKED: 'pot:banked',         // { amount, slam, auto, x, z }   amount = what was added to the score
+  POT_LOST: 'pot:lost',             // { amount, x, z }   a coconut hit (or the run's end) took the pot
+  SWOOP: 'swoop',                   // { x, z, points, chain }   a mango caught while dashing
+  SLAM_BANK: 'slambank',            // { x, z, amount, bonus }   banked by dashing into a bank spot
 
   // ---- player actions (emitted by play/player.js)
   DASH: 'dash',                     // { x, z, dirX, dirZ }
+  DASH_END: 'dash:end',             // { x, z }   the dash burst is over (the Chain resets if it had no Swoop)
   SKID: 'skid',                     // { x, z }   a hard reversal at speed
   SNAP_TURN: 'snapturn',            // { x, z, dirX, dirZ }   a sharp turn right after a dash
   FOOTSTEP: 'footstep',             // { x, z, speed }   a foot plants (speed in units / second)

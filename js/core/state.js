@@ -18,7 +18,8 @@ export const state = {
   player: { id: 'guest', name: 'Guest', account: null, signedIn: false, face: null, style: null },
 
   // owner: play/scoring.js
-  score: 0,
+  score: 0,                   // the BANKED score (never goes down); points earned wait in the pot until banked
+  pot: 0,                     // points earned and not banked yet
   lives: 3,
   multiplier: 1,              // 1..5
   comboStep: 0,               // catches toward the next multiplier, 0..4
@@ -29,7 +30,10 @@ export const state = {
   heartbeat: false,           // last life
   shield: false,              // calabash shield ready
   aheadOfBest: null,          // score - best, or null when there is no best yet
-  stats: { mangoes: 0, golden: 0, nearMisses: 0, perfectDodges: 0, bestMultiplier: 1 },
+  stats: {
+    mangoes: 0, golden: 0, nearMisses: 0, perfectDodges: 0, bestMultiplier: 1,
+    banks: 0, slams: 0, bestBank: 0, swoops: 0, bestChain: 0, potLostTotal: 0,
+  },
 
   // owner: play/player.js
   dashReadyFrac: 1,           // 0 = just used, 1 = ready
@@ -56,4 +60,11 @@ export const state = {
  * @property {{ name: string, threshold: number } | null} nextMedal   null at diamond
  * @property {boolean} isBest
  * @property {number} best             best after this run
+ * @property {number} potLost          the pot lost at the END of the run (final hit, or unbanked): the only loss players see
+ * @property {number} banks
+ * @property {number} slams
+ * @property {number} bestBank
+ * @property {number} swoops
+ * @property {number} bestChain
+ * @property {number} potLostTotal     every loss added up (bot and ?debug only; never shown)
  */

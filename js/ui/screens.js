@@ -161,6 +161,8 @@ export function initScreens(root, a) {
           <p class="over__score" aria-live="polite">0</p>
           <p class="over__stamp" hidden>${$esc(TEXT.gameOver.newBest)}</p>
           <p class="over__best"></p>
+          <p class="over__pot" hidden></p>
+          <p class="over__skills" hidden></p>
           <p class="over__board"></p>
         </div>
         <div class="over__right">
@@ -340,6 +342,22 @@ export function showGameOver(summary, { player, portraitUrl, dailyLabel } = {}) 
   o.querySelector('.s-near').textContent = num(summary.nearMisses);
   o.querySelector('.s-time').textContent = mmss(summary.timeSurvived);
   // Best is a line under the score, or the NEW BEST stamp when this run is the new best
+  // "Lost in the pot": ONLY what was lost at the end of the run, in plain words (no running total, no "win it back"); the skills line
+  // leaves out whatever is 0
+  const potLine = o.querySelector('.over__pot');
+  potLine.hidden = !(summary.potLost > 0);
+  if (summary.potLost > 0) potLine.textContent = fill(TEXT.gameOver.lostInPot, { pot: num(summary.potLost) });
+  const sk = TEXT.gameOver.skills;
+  const plural = (pair, n) => fill(pair[n === 1 ? 0 : 1], { n: num(n) });
+  const parts = [];
+  if (summary.swoops > 0) parts.push(plural(sk.swoop, summary.swoops));
+  if (summary.bestChain >= 2) parts.push(fill(sk.chain, { n: summary.bestChain }));
+  if (summary.perfectDodges > 0) parts.push(plural(sk.perfect, summary.perfectDodges));
+  if (summary.slams > 0) parts.push(plural(sk.slam, summary.slams));
+  const skillLine = o.querySelector('.over__skills');
+  skillLine.hidden = parts.length === 0;
+  skillLine.textContent = parts.join(' · ');
+
   const bestLine = o.querySelector('.over__best');
   bestLine.textContent = `${TEXT.start.best} ${num(Math.max(summary.best || 0, summary.score))}`;
   bestLine.hidden = !!summary.isBest || !(summary.best > 0);

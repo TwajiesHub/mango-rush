@@ -135,7 +135,15 @@ export const CONFIG = Object.freeze({
     comboGrace: 0.4,
     nearMissTimeBonus: 0.8,   // seconds added to the combo timer
     heartbeatBonus: 1.5,      // all points x1.5 on the last life
+    swoopBonus: 1.5,          // a mango caught while dashing pays +50%
+    plankMult: 2,             // a catch made on the golden plank pays x2 (before the multiplier)
+    slamBonus: 0.1,           // dashing into a bank spot adds 10% to the pot
   },
+
+  // The pot and the deck (step 5b)
+  bank: { radius: 1.1, hintPot: 500, hintMs: 3000 },   // a bank spot; the one-time hint shows when the pot first passes hintPot
+  plank: { from: 20, every: 15, warn: 1, width: 1.5, length: 3, picks: 40 },   // the golden plank: first seen at `from` s, moves every `every` s
+  juice: { radius: 0.9, life: 10, fade: 2, grip: 0.35, max: 6 },   // a rotten mango's juice patch: it is slippery until it fades
 
   madness: {
     fillSeconds: 6,           // seconds held at x5 to fill the meter

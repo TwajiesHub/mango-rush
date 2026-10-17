@@ -82,6 +82,11 @@ function paintPerf() {
       `bag ${p.drops.bag.join(' ') || '(empty)'}`,
       `seen ${Object.keys(p.drops.seen).filter((k) => p.drops.seen[k]).join(' ') || '-'}   mercy ${p.drops.mercy.toFixed(1)} s`,
       `early golden ${p.drops.earlyDone ? 'done' : 'at ' + p.drops.earlyAt.toFixed(1) + ' s'}${p.drops.pending ? '   waiting: ' + p.drops.pending : ''}`,
+      `pot ${p.pot}   banks ${p.stats.banks} (slams ${p.stats.slams}, best ${p.stats.bestBank})   lost ${p.stats.potLostTotal}`,
+      `swoops ${p.stats.swoops}   best chain ${p.stats.bestChain}`,
+      `plank ${p.plank.active ? '(' + p.plank.x.toFixed(1) + ', ' + p.plank.z.toFixed(1) + ')' : 'not yet'}   next move in ${p.plank.inSeconds.toFixed(1)} s   (${p.plank.candidates} spots)`,
+      `bank spots ${p.banks.map((b) => '(' + b.x.toFixed(1) + ', ' + b.z.toFixed(1) + ')').join('  ')}`,
+      `juice patches ${p.patches.length}${p.patches.length ? '  ' + p.patches.map((q) => '(' + q.x + ',' + q.z + ' ' + q.life + 's)').join(' ') : ''}`,
     ] : []),
   ].join('\n');
   if (text !== lastPerfText) { lastPerfText = text; perfBox.textContent = text; }   // write only when it changed
