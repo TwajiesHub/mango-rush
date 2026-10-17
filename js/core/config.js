@@ -11,10 +11,12 @@ export const CONFIG = Object.freeze({
 
   // Difficulty keyframes by run time (seconds). Values are interpolated (eased) between keys.
   difficulty: [
+    // THRILL PASS A (step 7): the old curve compressed. A 5 s gentle ramp-in, then the run starts at the old 60 s values, reaches the old
+    // 150 s values by 90 s and the old 240 s values by 150 s. (The phases below keep their times: they drive the coconut mix and the look.)
     { t: 0,   dropGap: 1.6,  coconutShare: 0.15, warn: 1.2,  goldenChance: 0.0 },
-    { t: 60,  dropGap: 1.0,  coconutShare: 0.30, warn: 1.0,  goldenChance: 0.05 },
-    { t: 150, dropGap: 0.52, coconutShare: 0.52, warn: 0.75, goldenChance: 0.12 },
-    { t: 240, dropGap: 0.31, coconutShare: 0.66, warn: 0.5,  goldenChance: 0.20 },
+    { t: 5,   dropGap: 1.0,  coconutShare: 0.30, warn: 1.0,  goldenChance: 0.05 },
+    { t: 90,  dropGap: 0.52, coconutShare: 0.52, warn: 0.75, goldenChance: 0.12 },
+    { t: 150, dropGap: 0.31, coconutShare: 0.66, warn: 0.5,  goldenChance: 0.20 },
   ],
   minWarn: 0.5,               // warning time never below this
   rottenChance: { fromPhase: 'dusk', chance: 0.08 },
@@ -31,7 +33,7 @@ export const CONFIG = Object.freeze({
   // gap tightens and the coconut share rises by up to `peak` (+25%), then a `breather` follows: the gap widens x`breatherGap`, the
   // coconut share is multiplied by `breatherShare`, and from dusk one golden mango is guaranteed in it. The first `calmFor` seconds
   // ease the wave in. All times come from here, never from the rng, so every player and every Daily Run gets the same timeline.
-  waves: { length: 25, breather: 4.5, peak: 0.25, breatherGap: 1.6, breatherShare: 0.5, calmFor: 20, goldenFromT: 60 },
+  waves: { length: 25, breather: 3, peak: 0.25, breatherGap: 1.6, breatherShare: 0.5, calmFor: 5, goldenFromT: 60 },
   earlyGolden: { from: 8, to: 14 },     // every run has one golden mango at an rng-chosen moment in this window
 
   // Coconut types (step 5a). `bags` = how many of each type go in the shuffle bag, per phase (8 entries each).
@@ -62,6 +64,23 @@ export const CONFIG = Object.freeze({
   volleys: { fromPhase: 'night', size: [2, 3], chance: 0.3 },
   bat: { fromPhase: 'dusk', every: [25, 40], warn: 1.0 },
   happeningWarnTime: 2,       // banner + music drop before a happening
+
+  // Thrill pass A (step 7): lead-aimed coconuts, patterns at every wave peak, golden mango = double danger. All of it is drawn from the run rng
+  // with a fixed number of draws per spawn event (play/drops.js header), so the Daily Run is the same for everyone.
+  thrill: {
+    leadTime: 0.5,            // a leading coconut lands where the player will be in this many seconds (position + velocity x leadTime)
+    leadShare: 0.5,           // share of the aimed coconuts that lead
+    leadJitter: 0.6,          // ...give or take this many units
+    patterns: {
+      from: 20,               // from this run time, at every wave peak (the last `peakWindow` seconds of each wave) one pattern falls
+      peakWindow: 2.5,
+      warnMin: 0.9,           // pattern coconuts are normal ones with at least this warning, rings honest as always
+      line: { min: 4, step: 1.5, ahead: 1.6 },          // 4-5 coconuts in a row across the player's path
+      cage: { count: 6, radius: 2.2, gap: 1.6 },        // 6 around the player, ONE gap this wide (free passage between two hit circles)
+      sweep: { count: 5, step: 0.15 },                  // a wall of 5 across the deck landing 0.15 s apart
+    },
+    hot: { share: 2, shareCap: 0.92, near: 2.5, nearShare: 0.5, tellHz: 2.5 },   // a live golden mango: twice the coconuts, half of them near it
+  },
 
   // The barge (world/barge.js). Units are world units; the deck top is y = 0.
   deck: {
@@ -151,7 +170,7 @@ export const CONFIG = Object.freeze({
     gravity: 22,              // used when the warning time is long enough; shorter warnings add a starting speed
     firstAt: 0.6,             // seconds into the run
     gapJitter: [0.75, 1.25],  // each gap is dropGap x a number in this range
-    aimChance: 0.3,           // share of coconuts aimed at the player (0.45 on the step 1 island; the deck is 40% of its area)
+    aimChance: 0.35,          // share of coconuts aimed at the player, from the start (step 7). Half of them LEAD the player (see `thrill`)
     aimRadius: 3.4,           // aimed coconuts land within this distance of the player (2.6 in step 1)
     edgeMargin: 0.4,          // random drops stay this far inside the deck edge
     minSeparation: 1.3,       // falling items keep this far apart

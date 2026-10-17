@@ -3,7 +3,8 @@
 // CONTRACT:
 //   initPlayer(parent) ; setCharacter(info) ; resetPlayer() ; updatePlayer(dt, input)
 //     parent = barge.deckRoot(): the player moves with the deck. Coordinates are deck-local.
-//   getPlayer() -> { object, x, z, invulnerable, dashing, dashStartT, dashStartX, dashStartZ }   the SAME object every call
+//   getPlayer() -> { object, x, z, vx, vz, invulnerable, dashing, dashStartT, dashStartX, dashStartZ }   the SAME object every call
+//        vx, vz = the velocity now (units / second): drops.js leads its aimed coconuts with it (step 7).
 //        dashStartT = state.time when the latest dash started (-99 = none this run), dashStartX / Z = where the player stood then:
 //        drops.js uses them for the Perfect dodge.
 //   refillDash() -> void   the dash is ready at once (a Perfect dodge refills it)
@@ -80,7 +81,7 @@ const camMotion = { vx: 0, vz: 0, dashing: false, dirX: 0, dirZ: 1 };           
 const dustAt = { x: 0, y: 0.12, z: 0 };
 const stepEvent = { x: 0, z: 0, speed: 0 };
 
-const view = { object: null, x: 0, z: 0, invulnerable: false, dashing: false, dashStartT: -99, dashStartX: 0, dashStartZ: 0 };
+const view = { object: null, x: 0, z: 0, vx: 0, vz: 0, invulnerable: false, dashing: false, dashStartT: -99, dashStartX: 0, dashStartZ: 0 };
 
 // position history: a fixed ring buffer (one sample per update), so "where was the player 0.4 s ago" never allocates
 const HIST = 256;
@@ -171,6 +172,8 @@ export function resetPlayer() {
 function syncView() {
   view.x = x;
   view.z = z;
+  view.vx = vel.x;
+  view.vz = vel.z;
   view.invulnerable = invuln > 0;
   view.dashing = dashT > 0;
   if (blob) blob.position.set(x, 0.02, z);

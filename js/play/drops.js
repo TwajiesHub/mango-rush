@@ -47,8 +47,8 @@
 // (spin, particles) use Math.random().
 //   At reset:   1 earlyAt (the golden mango's time in 8..14 s), then CONFIG.plank.picks (40) numbers for the golden plank (play/plank.js: all
 //               pre-drawn here, so the draw order never depends on time or on the player)
-// One spawn event draws, in this order (always all eight):
-//   1 gap   2 type   3 angle   4 radius   5 aim   6 volley   7 drift angle   8 drift distance
+// One spawn event draws, in this order (always all twelve, step 7):
+//   1 gap   2 type   3 angle   4 radius   5 aim   6 volley   7 drift angle   8 drift distance   9 lead   10 pattern type   11 pattern direction   12 hot
 //   + 3 more per extra coconut of a volley: aim, angle, radius
 //   + the bag refill: when the bag is empty or the phase changed, a coconut deal first shuffles the bag: (n - 1) draws per attempt, and it
 //     reshuffles while a run of one type would be longer than CONFIG.coconuts.maxRun (the refill depends on the schedule and the rng only)
@@ -58,6 +58,12 @@
 //   angle, radius -> where it lands: uniform on the deck, or (aim < aimChance, coconuts only) near the player
 //   volley -> a coconut with volley < volleyChance (after volleyFromT) brings two more coconuts (always normal ones)
 //   drift  -> only a drifter uses 7 and 8: the slide direction and distance (they are drawn for every event, used or not)
+//   lead   -> an aimed coconut (aim < aimChance 0.35) leads the player when lead < thrill.leadShare: it lands at position + velocity x 0.5 s
+//   pattern-> the first event in the last 2.5 s of each wave from 20 s is a PATTERN instead (type 'pattern', 10 picks LINE / CAGE / SWEEP, 11 is its
+//             direction): normal coconuts, warning >= 0.9 s, honest rings, nothing within the mercy window (see launchPattern)
+//   hot    -> while a golden mango is "hot" (from its spawn until it would rot: a SCHEDULE window, so the Daily Run stays identical) the coconut
+//             share is doubled (the gap adjusted so it is really twice the coconuts) and a coconut with hot < 0.5 lands within 2.5 units of the
+//             golden mango's spot for as long as that mango is still on the deck (caught or rotted = no more bias). Its ring pulses red-gold.
 // Hold: an event that would break "a first appearance falls alone" waits (on the schedule clock) until it is clear; the draws are
 // already made, so the order never changes.
 // Fall time equals the warning time, so the ring is always honest. Pooled: no allocation per frame.
@@ -235,7 +241,7 @@ function makeSlot(type) {
   shadow.visible = false;
   scene.add(mesh, ring, shadow);
   return {
-    type, kind: 'normal', id: 0, mesh, marker: ring, ringMat, shadow, shadowMat, bodyMat: mesh.material,
+    type, kind: 'normal', id: 0, mesh, marker: ring, ringMat, baseColor: ringMat.uniforms.uColor.value.clone(), shadow, shadowMat, bodyMat: mesh.material,
     sparkle: extras.sparkle || null, flies: extras.flies || null, t: Math.random() * 6,
     x: 0, z: 0, y: 0, age: 0, warn: 1, v0: 0, g: 0, landed: false, life: 0, spin: 0, caught: false,
     locked: true, lockAge: 0, fallStart: 0, yStart: 0, hangUntil: 0, ex: 0, ez: 0, dirX: 0, dirZ: 0, final: 1,
@@ -365,6 +371,7 @@ function launch(type, x, z, warn, kind = 'normal') {
   u.uOpacity.value = 0.45;
   u.uSpacing.value = 1; u.uDotSize.value = RING_DOT; u.uPulse.value = 0; u.uPulseAmt.value = 0; u.uInner.value = 1; u.uLock.value = 0;
   u.uCPulse.value = 0; u.uTrail.value.set(0, 0);
+  u.uColor.value.copy(it.baseColor);
   it.marker.visible = true;
   it.shadow.position.set(x, 0.012, z);
   it.shadow.scale.set(0.62, 1, 0.62);
@@ -439,10 +446,25 @@ function separate(pos) {
 }
 
 const spot = { x: 0, z: 0 };
-function place(angle01, radius01, aimed) {
+const T7 = CONFIG.thrill;
+const HOT_RED = new THREE.Color('#E4573D');
+// THRILL: the golden mango that makes the deck dangerous (set when an event launches it; the window is on the schedule clock)
+const hot = { id: 0, until: -1, x: 0, z: 0 };
+let patternWave = -1;
+const hotLive = () => { if (!hot.id) return false; for (let i = 0; i < items.length; i++) if (items[i].id === hot.id) { hot.x = items[i].x; hot.z = items[i].z; return true; } return false; };
+
+function place(angle01, radius01, aimed, lead = false, hotSpot = false) {
   const b = deckBounds();
   const pl = getPlayer();
-  if (aimed) {
+  if (hotSpot) {   // near the golden mango: within thrill.hot.near units of its spot
+    const a = angle01 * Math.PI * 2;
+    spot.x = hot.x + Math.cos(a) * radius01 * T7.hot.near;
+    spot.z = hot.z + Math.sin(a) * radius01 * T7.hot.near;
+  } else if (aimed && lead) {   // LEAD: where the player will be in leadTime seconds, give or take a little
+    const a = angle01 * Math.PI * 2;
+    spot.x = pl.x + pl.vx * T7.leadTime + Math.cos(a) * radius01 * T7.leadJitter;
+    spot.z = pl.z + pl.vz * T7.leadTime + Math.sin(a) * radius01 * T7.leadJitter;
+  } else if (aimed) {
     const a = angle01 * Math.PI * 2;
     spot.x = pl.x + Math.cos(a) * radius01 * D.aimRadius;
     spot.z = pl.z + Math.sin(a) * radius01 * D.aimRadius;
@@ -463,7 +485,7 @@ function record(entry) {
   if (DEBUG) console.log('[drops]', JSON.stringify(entry));
 }
 
-// Draw every number of one spawn event (always all eight, in this order), decide what it is and when it may launch.
+// Draw every number of one spawn event (always all twelve, in this order), decide what it is and when it may launch.
 function drawEvent() {
   const now = nextAt;
   const d = difficultyAt(now);
@@ -476,10 +498,20 @@ function drawEvent() {
   const uVolley = rng.next();
   const uDriftA = rng.next();
   const uDriftD = rng.next();
+  const uLead = rng.next();
+  const uPatType = rng.next();
+  const uPatDir = rng.next();
+  const uHot = rng.next();
 
   // the wave: the gap tightens and the coconut share rises along a wave; a breather widens the gap and halves the share
-  const gap = (d.dropGap / wv.intensity) * (wv.breather ? W.breatherGap : 1);
-  const share = d.coconutShare * wv.intensity * (wv.breather ? W.breatherShare : 1);
+  let gap = (d.dropGap / wv.intensity) * (wv.breather ? W.breatherGap : 1);
+  let share = d.coconutShare * wv.intensity * (wv.breather ? W.breatherShare : 1);
+  const hotWin = now < hot.until;
+  if (hotWin) {   // a hot golden mango: twice the coconuts (the gap makes up what the share cap cannot)
+    const s2 = Math.min(T7.hot.shareCap, share * T7.hot.share);
+    gap *= s2 / (share * T7.hot.share);
+    share = s2;
+  }
 
   let type = 'mango';
   let aimedOk = true;
@@ -498,17 +530,29 @@ function drawEvent() {
     else if (rest < g + rot + shd) type = 'shield';
   }
 
+  // a PATTERN at every wave peak from 20 s (a golden mango, early or from a breather, wins the event)
+  const P7 = T7.patterns;
+  const period = W.length + W.breather;
+  if (type !== 'golden' && !wv.breather && now >= P7.from && patternWave !== wv.index && now - wv.index * period >= W.length - P7.peakWindow) {
+    type = 'pattern';
+    patternWave = wv.index;
+  }
+
   let kind = 'normal';
   if (type === 'coconut') kind = dealer.deal(rng, phaseAt(now), now < lateLiveUntil);
 
   ev.type = type;
+  ev.lead = uAim < D.aimChance && uLead < T7.leadShare;
+  ev.patType = uPatType < 1 / 3 ? 0 : uPatType < 2 / 3 ? 1 : 2;
+  ev.patDir = uPatDir;
+  ev.hot = hotWin && uHot < T7.hot.nearShare;
   ev.kind = kind;
   ev.angle = uAngle;
   ev.radius = uRadius;
   ev.aim = type === 'coconut' && aimedOk && uAim < D.aimChance;
   ev.driftA = uDriftA;
   ev.driftD = uDriftD;
-  ev.warn = type === 'coconut' ? warnFor(kind, d.warn) : d.warn;
+  ev.warn = type === 'coconut' ? warnFor(kind, d.warn) : type === 'pattern' ? Math.max(d.warn, P7.warnMin) : d.warn;
   ev.first = type === 'coconut' && !seen[kind];
   ev.volley = type === 'coconut' && now > D.volleyFromT && uVolley < D.volleyChance;
   ev.n = 0;
@@ -536,10 +580,70 @@ function drawEvent() {
   return ev;
 }
 
+// PATTERNS: normal coconuts, honest rings, none within the mercy window of a hit. Positions come from the player (predicted a little ahead)
+// and the event's pattern direction: no extra draws, so the Daily Run's draw order never changes.
+const pt = { x: 0, z: 0 };
+function patternShot(x, z, warn) {
+  pt.x = x;
+  pt.z = z;
+  clampDeck(pt);
+  applyMercy(pt);
+  launch('coconut', pt.x, pt.z, warn, 'normal');
+}
+
+function launchPattern(e) {
+  if (state.time < mercyUntil) return;
+  const pl = getPlayer();
+  const b = deckBounds();
+  const P7 = T7.patterns;
+  const px = pl.x + pl.vx * 0.4;
+  const pz = pl.z + pl.vz * 0.4;
+  const dirA = e.patDir * Math.PI * 2;
+  if (e.patType === 0) {                          // LINE: 4-5 in a row across the player's path
+    const sp = Math.hypot(pl.vx, pl.vz);
+    const hx = sp > 0.8 ? pl.vx / sp : Math.cos(dirA);
+    const hz = sp > 0.8 ? pl.vz / sp : Math.sin(dirA);
+    const n = P7.line.min + (Math.floor(e.patDir * 10) % 2);
+    const cx = px + hx * P7.line.ahead;
+    const cz = pz + hz * P7.line.ahead;
+    for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * P7.line.step; patternShot(cx - hz * off, cz + hx * off, e.warn); }
+  } else if (e.patType === 1) {                   // CAGE: 6 around the player with ONE gap (the dash is the answer)
+    const C = P7.cage;
+    const near = Math.hypot(px / b.halfWidth, pz / b.halfDepth) > 0.6;
+    const gapDir = near ? Math.atan2(-pz, -px) + (e.patDir - 0.5) * 0.8 : dirA;           // near the rim the gap faces the deck's middle
+    const half = Math.asin(Math.min(1, (C.gap + 2 * CONFIG.hitRadius) / (2 * C.radius)));   // half the gap's angle: the free passage is C.gap wide
+    const step = (Math.PI * 2 - 2 * half) / (C.count - 1);
+    for (let k = 0; k < C.count; k++) { const a = gapDir + half + k * step; patternShot(px + Math.cos(a) * C.radius, pz + Math.sin(a) * C.radius, e.warn); }
+  } else {                                        // SWEEP: a wall of 5 across the deck, landing in sequence
+    const S = P7.sweep;
+    const alongX = b.halfWidth >= b.halfDepth;
+    const half = (alongX ? b.halfWidth : b.halfDepth) - 1;
+    const other = alongX ? pz : px;
+    for (let k = 0; k < S.count; k++) {
+      const u = (e.patDir < 0.5 ? k : S.count - 1 - k) * S.step;
+      const c = -half + (k / (S.count - 1)) * 2 * half;
+      patternShot(alongX ? c : other, alongX ? other : c, e.warn + u);
+    }
+  }
+}
+
 function launchEvent(e) {
-  const p = place(e.angle, e.radius, e.aim);
+  if (e.type === 'pattern') {
+    launchPattern(e);
+    landBusyUntil = Math.max(landBusyUntil, e.ready + e.warn + T7.patterns.sweep.count * T7.patterns.sweep.step);
+    return;
+  }
+  const useHot = e.type === 'coconut' && e.hot && hotLive();
+  const p = place(e.angle, e.radius, e.aim, e.lead, useHot);
   if (e.type === 'coconut') applyMercy(p);
   const it = e.kind === 'late' ? null : launch(e.type, p.x, p.z, e.warn, e.kind);
+  if (e.type === 'golden' && it) {   // THRILL: from now until it would rot the deck is dangerous; its ring pulses red-gold
+    hot.id = it.id;
+    hot.x = it.x;
+    hot.z = it.z;
+    hot.until = e.ready + e.warn + CONFIG.landedFruitLife;
+    setRingTell(it.id, { pulse: T7.hot.tellHz, pulseAmt: 0.3 });
+  }
   if (e.kind === 'late') {
     playerAt(C.late.lag, tmp);
     clampDeck(tmp);
@@ -574,6 +678,9 @@ export function resetDrops(r) {
   earlyDone = false;
   resetPlank(rng);   // the golden plank's choices: pre-drawn now (after the early-golden draw), so the draw order never depends on time
   breatherGiven = -1;
+  hot.id = 0;
+  hot.until = -1;
+  patternWave = -1;
   holdLandAfter = 0;
   landBusyUntil = 0;
   lateLiveUntil = 0;
@@ -603,6 +710,7 @@ export function getDropDebug() {
   return {
     phase: phaseAt(t), intensity: wv.intensity, breather: wv.breather, wave: wv.index,
     bag: dealer ? dealer.contents() : [], seen: { ...seen }, earlyAt, earlyDone,
+    hot: hot.until > t ? `golden hot for ${(hot.until - t).toFixed(1)}s` : '', patternWave,
     pending: pending ? `${pending.kind} in ${Math.max(0, pending.ready - t).toFixed(1)}s` : '',
     mercy: Math.max(0, mercyUntil - t),
   };
@@ -727,6 +835,7 @@ export function updateDrops(dt) {
       it.mesh.position.y = Math.max(ground, y);
       // the ring closes in from CLOSE_IN x to 1.0 x its final size over the whole warning
       it.ringMat.uniforms.uOpacity.value = 0.45 + 0.55 * progress;
+      if (it.id === hot.id && state.time < hot.until) it.ringMat.uniforms.uColor.value.copy(it.baseColor).lerp(HOT_RED, 0.5 + 0.5 * Math.sin(it.t * Math.PI * 2 * T7.hot.tellHz));   // the "hot" tell
       const sc = it.final * (CLOSE_IN - (CLOSE_IN - 1) * progress);
       it.marker.scale.setScalar(sc);
       if (it.kind === 'drifter' && !it.locked) it.ringMat.uniforms.uTrail.value.set(it.dirX * C.drifter.trail / sc * 2, -it.dirZ * C.drifter.trail / sc * 2);

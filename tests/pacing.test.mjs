@@ -90,7 +90,7 @@ for (let seed = 1; seed <= 40; seed++) {
   check('breather length', Math.abs(sawBreather * 0.25 - Math.floor(400 / period) * W.breather) < W.breather + 0.5, String(sawBreather * 0.25));
   check('wave index counts up', waveAt(period + 1).index === 1 && waveAt(2 * period + 1).index === 2);
   check('intensity rises along a wave', waveAt(period * 3 + 20).intensity > waveAt(period * 3 + 5).intensity);
-  check('the first seconds are eased in', waveAt(5).intensity < 1 + W.peak * (5 / W.length) * 0.5);
+  check('the first seconds are eased in', waveAt(2).intensity < 1 + W.peak * (2 / W.length) * 0.5);
   check('waveAt is pure', JSON.stringify(waveAt(77.7)) === JSON.stringify(waveAt(77.7)));
 }
 
