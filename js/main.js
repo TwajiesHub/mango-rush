@@ -13,10 +13,10 @@ import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
 import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, warmUp, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
 import { createFrameClock } from './core/frameclock.js';
-import { buildBarge, updateBarge, deckRoot, setOrientation } from './world/barge.js';
+import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose } from './play/player.js';
-import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, forceDrop } from './play/drops.js';
+import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop } from './play/drops.js';
 import { resetHappenings, updateHappenings } from './play/happenings.js';
 import { resetScoring, updateScoring, endRun, scoringSelfTest } from './play/scoring.js';
 import { initJuice, timeScale, updateJuice, setPlayerObject } from './fx/juice.js';
@@ -296,7 +296,7 @@ function benchBusyScene(pr = 1.5, frames = 90) {
 function getPerf() {
   const s = clock.stats();
   const q = getQualityInfo();
-  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer };
+  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer, drops: getDropDebug() };
 }
 
 // ---------------------------------------------------------------- debug (only with ?debug in the URL)
@@ -321,6 +321,17 @@ if (location.search.includes('debug')) {
       simulate: (opts) => botModule.simulate(opts),
     },
   };
+  // keys 1-5 drop a coconut of each kind (normal, slow, fast, drifter, late-lock) at a random spot: forceDrop uses no rng, so a Daily Run is untouched
+  const KINDS = ['normal', 'slow', 'fast', 'drifter', 'late'];
+  addEventListener('keydown', (e) => {
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || state.screen !== 'play') return;
+    const i = '12345'.indexOf(e.key);
+    if (i < 0 || e.key.length !== 1) return;
+    const b = deckBounds();
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * 0.8;
+    forceDrop('coconut', Math.cos(a) * r * b.halfWidth, Math.sin(a) * r * b.halfDepth, undefined, KINDS[i]);
+  });
   window.__mangoTest = { scoring: () => { const r = scoringSelfTest(); console[r.ok ? 'log' : 'error']('[scoring self-check]', r); return r; } };
 }
 

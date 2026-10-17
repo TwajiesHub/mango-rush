@@ -34,6 +34,10 @@
 //   EVENTS.CATCH (type golden)      3-note chime chord (major triad), sparkle
 //   EVENTS.CATCH (type rotten)      dull "bonk", short
 //   EVENTS.CATCH (type shield)      soft wooden "tok" + rising shimmer
+//   EVENTS.DROP_SPAWN (coconuts)    (step 5a) a falling WHISTLE that says which kind it is, quiet: normal = mid, falling; slow = low and long
+//                                   (it starts when the coconut lets go); fast = high and short. At most two whistles per 0.15 s.
+//   EVENTS.RING_LOCK (late)         (step 5a) a small "click" when a late-lock coconut's spot locks
+//   EVENTS.DRIFT_START              (step 5a) a soft wind swish when a drifter's spot starts to slide
 //   EVENTS.DROP_LAND (type coconut) low thud
 //   EVENTS.HIT                      heavy thump + music duck CONFIG.audio.duckOnHitDb for CONFIG.audio.duckMs
 //                                   (shielded: a hollow wooden knock instead, no duck)
@@ -166,6 +170,26 @@ export function initAudio({ musicUrl: url }) {
       tone(600, 0.3, 'sine', 0.08, 900, 0.06);
     }
   });
+  // the tells you can play by ear (step 5a): quiet whistles, one per coconut kind
+  let whistleAt = -1;
+  let whistles = 0;
+  on(EVENTS.DROP_SPAWN, (e) => {
+    if (e.type !== 'coconut' || !ready()) return;
+    const now = ac.currentTime;
+    if (now - whistleAt > 0.15) { whistleAt = now; whistles = 0; }
+    if (++whistles > 2) return;
+    const wait = e.fallAt || 0;
+    const left = Math.max(0.2, e.warnTime - wait);
+    if (e.kind === 'slow') tone(560, Math.min(1.1, left), 'sine', 0.05, -260, wait);
+    else if (e.kind === 'fast') tone(2000, 0.3, 'sine', 0.04, -700, wait);
+    else tone(1050, Math.min(0.8, left), 'sine', 0.045, -500, wait);
+  });
+  on(EVENTS.RING_LOCK, (e) => {
+    if (e.kind !== 'late') return;
+    tone(2300, 0.035, 'square', 0.05);
+    noise(0.03, 0.06, 5000, 3000);
+  });
+  on(EVENTS.DRIFT_START, () => noise(0.55, 0.05, 500, 1800));   // a soft wind swish
   on(EVENTS.DROP_LAND, (e) => { if (e.type === 'coconut') tone(120, 0.18, 'sine', 0.25, -60); });
   on(EVENTS.HIT, (e) => {
     if (e.shielded) {

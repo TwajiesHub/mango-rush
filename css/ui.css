@@ -163,7 +163,7 @@ svg.wordmark { width: min(280px, 70vw); height: auto; display: block; }
 .hud__bottom { right: calc(var(--gutter) + var(--safe-r)); bottom: calc(var(--gutter) + var(--safe-b)); display: flex; gap: 12px; align-items: center; }
 .hud__dash { position: relative; min-width: 176px; height: 44px; padding: 0 14px; border-radius: 99px; background: var(--ink); border: 2px solid var(--ink); overflow: hidden; display: grid; place-items: center; color: var(--cream); font: 800 12px var(--font-body); letter-spacing: 0.06em; cursor: pointer; pointer-events: auto; }
 .hud__dash:active { transform: scale(0.97); }
-.hud__dash i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--paper-dark); }
+.hud__dash i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #7A5226; }   /* the recharge fill: cream text keeps >= 4.5:1 on it and on the ink */
 .hud__dash.is-ready i { background: var(--saffron); }
 .hud__dash.is-ready { color: var(--ink); }
 .hud__dash .dash__text { position: relative; }

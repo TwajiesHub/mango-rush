@@ -30,7 +30,7 @@ const D = CONFIG.deck;
 const DEG = Math.PI / 180;
 
 const COLORS = {
-  wood: '#B9824A', seam: '#8A5A2E', rim: '#6B4224', hull: '#4A2C14',
+  wood: '#C88C4B', seam: '#8A5A2E', rim: '#6B4224', hull: '#4A2C14',
   crate: '#8B5E34', crateTop: '#A06C3C', crateInside: '#3A2412', mango: '#F2A93B',
   post: '#3A2412', lamp: '#7A5A32', lampGlass: '#C79A52', rope: '#A38A57', sack: '#C9A66B', sackTie: '#6B4224',
 };

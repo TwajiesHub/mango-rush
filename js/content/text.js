@@ -89,6 +89,8 @@ const TEXT = {
     behindBest: '{score} to beat your best',                 // max 26
     dashReady: 'Dash ready',
     dashReadyKey: 'Space · Dash ready',   // on desktop, where Space dashes
+    dash: 'Dash',                         // while the dash is recharging (the pill fills up)
+    dashKey: 'Space · Dash',
     lives: 'Lives',
   },
 

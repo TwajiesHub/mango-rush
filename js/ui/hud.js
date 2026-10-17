@@ -121,6 +121,7 @@ export function initHud(r, a) {
     banner: q('.hud__banner'), dash: q('.hud__dash'), dashFill: q('.hud__dash i'), dashText: q('.dash__text'),
     touch: q('.touch'), joy: q('.touch__joy'), knob: q('.touch__joy i'),
   };
+  paintDashReady();   // the pill has its label and a full fill from the first frame (not only after updateHud runs)
   q('.hud__pause').addEventListener('click', () => actions.onPause?.());
   // the dash indicator is a real button: a click or tap dashes at once (and takes no focus, so Space stays a game key)
   el.dash.addEventListener('pointerdown', (e) => { e.preventDefault(); actions.onDash?.(); });
@@ -183,6 +184,15 @@ function reset() {
   el.banner.hidden = true;
   el.flash.classList.remove('is-on');
   Object.assign(last, { score: -1, lives: -1, mult: -1, step: -1, timer: -1, madness: -1, ahead: undefined, time: '', phase: '', dash: -1, shield: null });
+  paintDashReady();
+}
+
+// a full, ready dash pill with its label (the state at the start of a run)
+function paintDashReady() {
+  if (!el.dash) return;
+  el.dashFill.style.width = '100%';
+  el.dash.classList.add('is-ready');
+  el.dashText.textContent = isDesktop ? TEXT.hud.dashReadyKey : TEXT.hud.dashReady;
 }
 
 export function showHud(visible) {
@@ -249,7 +259,8 @@ export function updateHud() {
     last.dash = dashPct;
     el.dashFill.style.width = `${dashPct * 5}%`;
     el.dash.classList.toggle('is-ready', dashPct >= 20);
-    el.dashText.textContent = dashPct >= 20 ? (isDesktop ? TEXT.hud.dashReadyKey : TEXT.hud.dashReady) : '';
+    // the label is always there: "ready" when full, otherwise the plain name while the fill shows the cooldown
+    el.dashText.textContent = dashPct >= 20 ? (isDesktop ? TEXT.hud.dashReadyKey : TEXT.hud.dashReady) : (isDesktop ? TEXT.hud.dashKey : TEXT.hud.dash);
   }
   if (s.shield !== last.shield) { last.shield = s.shield; el.shield.hidden = !s.shield; }
 }

@@ -95,7 +95,7 @@ export function toon(color, opts = {}) {
   const key = `${color}|${opts.flatShading ? 'f' : ''}`;
   let m = toonCache.get(key);
   if (!m) {
-    m = addGrain(new THREE.MeshToonMaterial({ color, gradientMap: gradientMap(), flatShading: !!opts.flatShading }));
+    m = addGrain(new THREE.MeshToonMaterial({ color, gradientMap: gradientMap() }));
     m.userData.shared = true;
     toonCache.set(key, m);
   }
@@ -143,7 +143,7 @@ export function toonVertex({ print = false, flatShading = false } = {}) {
   let m = vcCache.get(key);
   if (!m) {
     m = addGrain(new THREE.MeshToonMaterial({
-      color: '#ffffff', vertexColors: true, gradientMap: gradientMap(), flatShading, map: print ? printTexture() : null,
+      color: '#ffffff', vertexColors: true, gradientMap: gradientMap(), map: print ? printTexture() : null,
     }));
     m.userData.shared = true;
     vcCache.set(key, m);

@@ -3,7 +3,12 @@
 // CONTRACT:
 //   initPlayer(parent) ; setCharacter(info) ; resetPlayer() ; updatePlayer(dt, input)
 //     parent = barge.deckRoot(): the player moves with the deck. Coordinates are deck-local.
-//   getPlayer() -> { object, x, z, invulnerable, dashing }   the SAME object every call
+//   getPlayer() -> { object, x, z, invulnerable, dashing, dashStartT, dashStartX, dashStartZ }   the SAME object every call
+//        dashStartT = state.time when the latest dash started (-99 = none this run), dashStartX / Z = where the player stood then:
+//        drops.js uses them for the Perfect dodge.
+//   refillDash() -> void   the dash is ready at once (a Perfect dodge refills it)
+//   playerAt(secondsAgo, out) -> out   writes { x, z } = where the player stood that many seconds ago (a fixed ring buffer, no
+//        allocation): the late-lock coconut's ring trails the player by this. Clamped to the oldest sample (~4 s).
 //   setOverPose(isBest) -> void   the held game-over pose: a slump, or a cheer after a new best (reset when a run starts)
 //   idlePlayer(realDt, screen) -> void   main.js calls it when no run is being played (start screen: the character turns
 //     slowly; game over: stands idle)
@@ -74,7 +79,51 @@ const camMotion = { vx: 0, vz: 0, dashing: false, dirX: 0, dirZ: 1 };           
 const dustAt = { x: 0, y: 0.12, z: 0 };
 const stepEvent = { x: 0, z: 0, speed: 0 };
 
-const view = { object: null, x: 0, z: 0, invulnerable: false, dashing: false };
+const view = { object: null, x: 0, z: 0, invulnerable: false, dashing: false, dashStartT: -99, dashStartX: 0, dashStartZ: 0 };
+
+// position history: a fixed ring buffer (one sample per update), so "where was the player 0.4 s ago" never allocates
+const HIST = 256;
+const histT = new Float32Array(HIST);
+const histX = new Float32Array(HIST);
+const histZ = new Float32Array(HIST);
+let histHead = 0;     // the next slot to write
+let histCount = 0;
+
+function pushHistory() {
+  histT[histHead] = state.time;
+  histX[histHead] = x;
+  histZ[histHead] = z;
+  histHead = (histHead + 1) % HIST;
+  if (histCount < HIST) histCount++;
+}
+
+export function playerAt(secondsAgo, out) {
+  if (histCount === 0) { out.x = x; out.z = z; return out; }
+  const want = state.time - secondsAgo;
+  let i = (histHead - 1 + HIST) % HIST;   // the newest sample; walk back until one is old enough
+  for (let n = 0; n < histCount - 1; n++) {
+    const j = (i - 1 + HIST) % HIST;
+    if (histT[i] <= want) break;
+    i = j;
+  }
+  // i is the first sample at or before `want` (or the oldest); blend with the next newer one for a smooth path
+  const k = (i + 1) % HIST;
+  const newer = i !== (histHead - 1 + HIST) % HIST;
+  if (newer && histT[k] > histT[i] && want > histT[i]) {
+    const u = (want - histT[i]) / (histT[k] - histT[i]);
+    out.x = histX[i] + (histX[k] - histX[i]) * u;
+    out.z = histZ[i] + (histZ[k] - histZ[i]) * u;
+  } else {
+    out.x = histX[i];
+    out.z = histZ[i];
+  }
+  return out;
+}
+
+export function refillDash() {
+  dashCool = 0;
+  state.dashReadyFrac = 1;
+}
 
 export function initPlayer(s) {
   scene = s;
@@ -108,6 +157,8 @@ export function resetPlayer() {
   dashT = dashCool = exitLeft = boostT = skidT = invuln = 0;
   dashQueued = snapPending = false;
   sinceDash = 99;
+  view.dashStartT = -99;
+  histHead = histCount = 0;
   state.dashReadyFrac = 1;
   camMotion.vx = camMotion.vz = 0;
   camMotion.dashing = false;
@@ -144,6 +195,9 @@ function startDash(inX, inZ, inLen) {
   snapPending = false;
   boostT = 0;
   trailT = 0;
+  view.dashStartT = state.time;      // for the Perfect dodge: when and where this dash began
+  view.dashStartX = x;
+  view.dashStartZ = z;
   vel.x = dx * TUNE.dashSpeed;       // the burst starts on this very frame
   vel.z = dz * TUNE.dashSpeed;
   emit(EVENTS.DASH, { x, z, dirX: dx, dirZ: dz });
@@ -287,6 +341,7 @@ export function updatePlayer(dt, input) {
   camMotion.dirX = dashDirX;
   camMotion.dirZ = dashDirZ;
   syncView();
+  pushHistory();
 }
 
 // the game-over pose, held on the game-over screen: a slump, or a cheer after a new best

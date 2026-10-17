@@ -77,6 +77,12 @@ function paintPerf() {
     `refresh ${p.refreshHz ? p.refreshHz.toFixed(0) + ' Hz' : 'measuring…'}   cap ${p.capped ? p.capFps.toFixed(0) + ' fps (on)' : 'off'}`,
     `antialias ${p.antialias ? 'on' : 'off'}   pixel ratio ${p.pixelRatio}   quality ${p.level + 1}/${p.levels}`,
     p.gpu ? `GPU ${p.gpu}` : 'GPU unknown',
+    ...(p.drops ? [
+      `phase ${p.drops.phase}   wave ${p.drops.wave}  ${p.drops.breather ? 'BREATHER' : 'x' + p.drops.intensity.toFixed(2)}`,
+      `bag ${p.drops.bag.join(' ') || '(empty)'}`,
+      `seen ${Object.keys(p.drops.seen).filter((k) => p.drops.seen[k]).join(' ') || '-'}   mercy ${p.drops.mercy.toFixed(1)} s`,
+      `early golden ${p.drops.earlyDone ? 'done' : 'at ' + p.drops.earlyAt.toFixed(1) + ' s'}${p.drops.pending ? '   waiting: ' + p.drops.pending : ''}`,
+    ] : []),
   ].join('\n');
   if (text !== lastPerfText) { lastPerfText = text; perfBox.textContent = text; }   // write only when it changed
 }

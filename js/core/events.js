@@ -31,7 +31,10 @@ export const EVENTS = Object.freeze({
   PLACE_ENTER: 'place:enter',       // { place: 'makoko'|'mangroves'|'bridge'|'waterfront'|'city'|'open' }
 
   // ---- drops (emitted by play/drops.js)
-  DROP_SPAWN: 'drop:spawn',         // { id, type, x, z, warnTime }
+  DROP_SPAWN: 'drop:spawn',         // { id, type, kind, x, z, warnTime, fallAt }   kind: 'normal'|'slow'|'fast'|'drifter'|'late' (coconuts; others 'normal')
+                                    //   fallAt = seconds after the spawn when the item really starts to fall (a slow coconut hangs first)
+  RING_LOCK: 'ring:lock',           // { id, kind, x, z }   a drifter / late-lock coconut's landing spot just locked (nothing moves after this)
+  DRIFT_START: 'drift:start',       // { id, x, z }   a drifter's landing spot starts to slide (the wind)
   DROP_LAND: 'drop:land',           // { id, type, x, z }
   // type is one of: 'mango'|'golden'|'rotten'|'coconut'|'shield'|'bigone'
 

@@ -12,9 +12,9 @@ export const CONFIG = Object.freeze({
   // Difficulty keyframes by run time (seconds). Values are interpolated (eased) between keys.
   difficulty: [
     { t: 0,   dropGap: 1.6,  coconutShare: 0.15, warn: 1.2,  goldenChance: 0.0 },
-    { t: 60,  dropGap: 1.0,  coconutShare: 0.22, warn: 1.0,  goldenChance: 0.05 },
-    { t: 150, dropGap: 0.55, coconutShare: 0.40, warn: 0.75, goldenChance: 0.12 },
-    { t: 240, dropGap: 0.33, coconutShare: 0.55, warn: 0.5,  goldenChance: 0.20 },
+    { t: 60,  dropGap: 1.0,  coconutShare: 0.30, warn: 1.0,  goldenChance: 0.05 },
+    { t: 150, dropGap: 0.52, coconutShare: 0.52, warn: 0.75, goldenChance: 0.12 },
+    { t: 240, dropGap: 0.31, coconutShare: 0.66, warn: 0.5,  goldenChance: 0.20 },
   ],
   minWarn: 0.5,               // warning time never below this
   rottenChance: { fromPhase: 'dusk', chance: 0.08 },
@@ -27,7 +27,30 @@ export const CONFIG = Object.freeze({
     { id: 'midnight', t: 210 },
   ],
 
-  breather: { every: 30, length: 3 },   // mango-only shower
+  // Sawtooth pacing (step 5a). The difficulty table is the overall trend; a WAVE multiplies it: over each `length` seconds the drop
+  // gap tightens and the coconut share rises by up to `peak` (+25%), then a `breather` follows: the gap widens x`breatherGap`, the
+  // coconut share is multiplied by `breatherShare`, and from dusk one golden mango is guaranteed in it. The first `calmFor` seconds
+  // ease the wave in. All times come from here, never from the rng, so every player and every Daily Run gets the same timeline.
+  waves: { length: 25, breather: 4.5, peak: 0.25, breatherGap: 1.6, breatherShare: 0.5, calmFor: 20, goldenFromT: 60 },
+  earlyGolden: { from: 8, to: 14 },     // every run has one golden mango at an rng-chosen moment in this window
+
+  // Coconut types (step 5a). `bags` = how many of each type go in the shuffle bag, per phase (8 entries each).
+  coconuts: {
+    bags: {
+      golden:   { normal: 6, slow: 2, fast: 0, drifter: 0, late: 0 },
+      dusk:     { normal: 3, slow: 2, fast: 2, drifter: 1, late: 0 },
+      night:    { normal: 2, slow: 1, fast: 2, drifter: 2, late: 1 },
+      midnight: { normal: 1, slow: 1, fast: 2, drifter: 2, late: 2 },
+    },
+    maxRun: 3,                // the dealer never deals more than this many of one type in a row
+    minLock: 0.35,            // every landing spot is locked at least this long before impact
+    slow:    { warn: 1.6, hangY: 6, hangUntil: 0.8, spacing: 0.6, dotSize: 1.15 },   // hangs at hangY (wobbling) until hangUntil, then falls
+    fast:    { warn: 0.45, spacing: 1.3, dotSize: 0.85, pulse: 5, pulseAmt: 0.35 },  // the one exception to minWarn
+    drifter: { minWarn: 1.1, drift: 1.5, trail: 0.5 },    // the spot slides up to `drift` units sideways, then locks minLock before impact
+    late:    { minWarn: 1.0, lockBefore: 0.4, lag: 0.4, follow: 12, pulse: 3 },      // the ring trails the player by `lag` s, locks `lockBefore` s before impact
+    mercy: { time: 1.5, radius: 1.2 },        // after a hit no coconut targets or locks within `radius` of where the player stood
+    aloneFor: 2,              // a type's first appearance in a run falls with nothing else landing within this many seconds
+  },
 
   // Scripted happenings (seconds into the run). happenings.js reads this.
   happenings: [
@@ -83,7 +106,7 @@ export const CONFIG = Object.freeze({
     gravity: 22,              // used when the warning time is long enough; shorter warnings add a starting speed
     firstAt: 0.6,             // seconds into the run
     gapJitter: [0.75, 1.25],  // each gap is dropGap x a number in this range
-    aimChance: 0.25,          // share of coconuts aimed at the player (0.45 on the step 1 island; the deck is 40% of its area)
+    aimChance: 0.3,           // share of coconuts aimed at the player (0.45 on the step 1 island; the deck is 40% of its area)
     aimRadius: 3.4,           // aimed coconuts land within this distance of the player (2.6 in step 1)
     edgeMargin: 0.4,          // random drops stay this far inside the deck edge
     minSeparation: 1.3,       // falling items keep this far apart
@@ -172,6 +195,21 @@ export function difficultyAt(t) {
     }
   }
   return { ...keys[keys.length - 1], t };
+}
+
+/**
+ * The wave at run time t -> { intensity, breather, index }. intensity is 1 .. 1 + waves.peak (it ramps up over each wave and is eased
+ * in over the first waves.calmFor seconds); breather is true in the pause after each wave; index counts the waves from 0.
+ * Depends on t and CONFIG only, so it is identical for everyone.
+ */
+export function waveAt(t) {
+  const W = CONFIG.waves;
+  const period = W.length + W.breather;
+  const index = Math.max(0, Math.floor(t / period));
+  const u = t - index * period;
+  if (u >= W.length) return { intensity: 1, breather: true, index };
+  const calm = Math.min(1, Math.max(0, t / W.calmFor));
+  return { intensity: 1 + W.peak * calm * (u / W.length), breather: false, index };
 }
 
 /** Phase id at run time t. */
