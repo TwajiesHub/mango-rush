@@ -61,9 +61,12 @@ const TEXT = {
   warmup: {
     move: 'Move with WASD or the arrow keys',                // max 40
     moveTouch: 'Drag anywhere on the left to move',          // max 40
-    catch: 'Stand in the gold ring to catch',                // max 40
-    dodge: 'Red ring with a cross: get out!',                // max 40
+    catch: 'Catch the mangoes: stand in the gold ring',      // max 44
+    dodge: 'Dodge the coconuts: watch the red ring',         // max 44
     ready: 'You got it.',                                    // max 20
+    dash: 'Press Space to dash',                             // max 40
+    dashTouch: 'Tap Dash to dash',
+    skip: 'Skip',
   },
   countdown: ['3', '2', '1', 'Go!'],
 
@@ -119,7 +122,7 @@ const TEXT = {
     dashReadyKey: 'Space · Dash ready',   // on desktop, where Space dashes
     inPot: '+{pot} in the pot',                              // max 24
     potLost: '-{pot}',
-    bankHint: 'Dash into a crate to bank your pot',          // the one-time hint (max 40)
+    bankHint: 'Walk into a glowing spot to bank it',         // the one-time hint (max 40)
     dash: 'Dash',                         // while the dash is recharging (the pill fills up)
     dashKey: 'Space · Dash',
     lives: 'Lives',

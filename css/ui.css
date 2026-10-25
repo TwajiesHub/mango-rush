@@ -236,6 +236,11 @@ svg.wordmark { width: min(300px, 70vw); height: auto; display: block; }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } }
 
 /* hint + countdown */
+.hint.is-in { animation: hintIn 0.3s var(--ease-out); }
+@keyframes hintIn { from { opacity: 0; transform: translate(-50%, 8px); } }
+.skip-warmup { position: absolute; left: 50%; bottom: calc(60px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--paper); z-index: 7; }
+.countdown.is-go { color: var(--saffron); }
+.countdown { text-transform: uppercase; }
 .hint { position: absolute; left: 50%; bottom: calc(110px + env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 8px 16px; background: var(--ink); color: var(--cream); border-radius: var(--radius); font-weight: 700; pointer-events: none; }
 .countdown { position: absolute; inset: 0; display: grid; place-items: center; font: 900 min(26vw, 200px) var(--font-display); color: var(--cream); text-shadow: 6px 6px 0 var(--ink); pointer-events: none; }
 .countdown.pop { animation: pop 0.5s var(--ease-pop); }

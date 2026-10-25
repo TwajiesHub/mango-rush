@@ -5,7 +5,7 @@
 
 export const state = {
   // owner: main.js
-  screen: 'loading',          // 'loading'|'start'|'warmup'|'play'|'paused'|'over'
+  screen: 'loading',          // 'loading'|'start'|'warmup'|'countdown'|'play'|'paused'|'dying'|'over'   (warmup: the first run's teaching minute; countdown: 3-2-1-GO, the run clock starts at GO)
   mode: 'free',               // 'free'|'daily'
   time: 0,                    // seconds since the run started (stops while paused)
   phase: 'golden',            // 'golden'|'dusk'|'night'|'midnight'

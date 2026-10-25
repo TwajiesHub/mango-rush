@@ -210,7 +210,10 @@ export const CONFIG = Object.freeze({
   },
 
   // The pot and the deck (step 5b)
-  bank: { radius: 1.1, hintPot: 500, hintMs: 3000 },   // a bank spot; the one-time hint shows when the pot first passes hintPot
+  bank: { radius: 1.1, hintPot: 1000, hintMs: 3500, hintHighlight: 6 },   // a bank spot; the one-time hint shows when the pot first reaches hintPot, and the nearest spot pulses for hintHighlight s
+  // the countdown before every run (step 12) and the first-run warm-up
+  countdown: { step: 0.6, goHold: 0.6 },   // 3, 2, 1 each step seconds apart, then GO (the run starts at GO); GO stays on screen goHold s
+  warmup: { moveDistance: 1.6, gap: 0.5, mangoWarn: 2.5, coconutWarn: 3.2, maxStep: [10, 9, 5.5, 8], readyHold: 1.1 },   // seconds / units; maxStep: the longest each hint waits for the player
   plank: { from: 20, every: 15, warn: 1, width: 1.5, length: 3, picks: 40 },   // the golden plank: first seen at `from` s, moves every `every` s
   juice: { radius: 0.9, life: 10, fade: 2, grip: 0.35, max: 6 },   // a rotten mango's juice patch: it is slippery until it fades
 

@@ -95,6 +95,21 @@ export function resetBank() {
     s.mat.uniforms.uOpacity.value = 0.35;
   }
   t = 0;
+  hintLeft = 0;
+}
+
+// the one-time bank hint: the spot nearest to (x, z) pulses brighter and bigger for `seconds` (steady under reduced motion)
+let hintLeft = 0;
+let hintSpot = -1;
+export function highlightNearestBank(x, z, seconds) {
+  let best = -1;
+  let bd = Infinity;
+  for (let i = 0; i < spots.length; i++) {
+    const d = Math.hypot(spots[i].x - x, spots[i].z - z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  hintSpot = best;
+  hintLeft = seconds;
 }
 
 export function bankSpots() {
@@ -104,6 +119,7 @@ export function bankSpots() {
 export function updateBank(dt) {
   if (!parent) return;
   t += dt;
+  if (hintLeft > 0) hintLeft -= dt;
   const pot = state.pot;
   const calm = state.settings.reducedMotion;
   const f = 0.8 + 2.2 * Math.min(1, pot / 3000);   // the breathing quickens as the pot grows
@@ -116,6 +132,11 @@ export function updateBank(dt) {
     u.uPulse.value = calm ? 0 : f;
     u.uPulseAmt.value = pot > 0 ? 0.18 : 0.08;
     s.mesh.scale.setScalar((R / RING_OUTER.bank) * (1 + (pot > 0 ? 0.025 : 0.01) * breath));
+    if (i === hintSpot && hintLeft > 0) {                                          // the hint: bigger and brighter, so the eye finds it
+      s.mesh.scale.setScalar((R / RING_OUTER.bank) * (1.12 + (calm ? 0 : 0.1 * Math.sin(t * 9))));
+      u.uOpacity.value = 1;
+      u.uDotSize.value = 1.9;
+    } else if (u.uDotSize.value !== 1.5) u.uDotSize.value = 1.5;
 
     if (state.screen !== 'play') continue;
     const inside = Math.hypot(pl.x - s.x, pl.z - s.z) <= s.r;

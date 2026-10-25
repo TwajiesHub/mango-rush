@@ -769,7 +769,7 @@ const waterMul = new THREE.Color();
 
 export function updateJourney(dt) {
   const screen = state.screen;
-  const live = screen === 'play' || screen === 'start';
+  const live = screen === 'play' || screen === 'start' || screen === 'warmup' || screen === 'countdown';
   const adt = live ? Math.min(dt, 0.1) : 0;      // ambient life moves in a run and on the start screen, and freezes on pause / game over
   clock += adt;
   const t = jtime();

@@ -13,7 +13,7 @@
 //
 //   initScreens(root: HTMLElement, actions) -> void
 //     actions = { onPlay(), onDaily(), onResume(), onRestart(), onQuit(), onPlayAgain(), onMenu(),
-//                 onShare(), onShareX(), onSettings(settings), onSignIn(), onLeaderboard() }
+//                 onShare(), onShareX(), onSettings(settings), onSignIn(), onLeaderboard(), onSkipWarmup() }
 //     START.NG GAME STANDARDS (start.ng checks for these): a visible link back to https://start.ng (the "← start.ng" link on the start screen and "Play more on
 //     start.ng" under the game over buttons), the name "start.ng" shown (the kicker, the links), and a SHARE ON X button on the game over card (onShareX).
 //     Build all screen DOM once inside root; show/hide with classes (no re-creating on every show).
@@ -28,8 +28,9 @@
 //     Signed in: LOOK reads "Synced from start.ng" with a check badge. Guest: PLAYER "Guest", LOOK "Playing as guest" and a
 //     "Sign in to save your scores" button (actions.onSignIn). Enter or Space = Play.
 //
-//   showWarmupHint(hint: 'move'|'catch'|'dodge'|null, isTouch: boolean) -> void
-//   showCountdown(n: number) -> void   n = 3,2,1,0 -> TEXT.countdown[3-n]; huge Archivo 900, pops in; hides itself after 0.6 s.
+//   showWarmupHint(hint: 'move'|'catch'|'dodge'|'dash'|'ready'|null, isTouch: boolean) -> void   (touch wording for move and dash)
+//   showSkip(visible) -> void   the warm-up's Skip button (actions.onSkipWarmup)
+//   showCountdown(n: number) -> void   n = 3,2,1,0 -> TEXT.countdown[3-n]; huge Archivo 900, pops in; GO is saffron and stays CONFIG.countdown.goHold s.
 //
 //   showPause(settings) -> void
 //     Dim + blur the game (a plain dim with reduced motion, or without backdrop-filter); a compact ochre card: Resume (Esc / P also resume),
@@ -61,6 +62,7 @@
 import { state } from '../core/state.js';
 import { EVENTS, on } from '../core/events.js';
 import TEXT, { fill, pickLine } from '../content/text.js';
+import { CONFIG } from '../core/config.js';
 import { wordmarkSVG } from './wordmark.js';
 
 let els = {};
@@ -70,6 +72,7 @@ let overToken = 0;      // cancels a game-over card that was queued but is no lo
 let countTimer = 0;
 let lastFocus = null;
 let toastTimer = 0;
+let countHide = 0;
 let lastBoard = null;   // the arguments of the last showLeaderboard (the debug key and retry reuse them)
 
 const OVER_DELAY = 300; // ms after showGameOver is called (the death transition has already ended)
@@ -244,7 +247,8 @@ export function initScreens(root, a) {
       </div>
     </section>
 
-    <div class="hint" hidden></div>
+    <div class="hint" role="status" hidden></div>
+    <button class="btn btn--small skip-warmup" type="button" data-act="skip-warmup" hidden>${$esc(TEXT.warmup.skip)}</button>
     <div class="countdown" aria-live="assertive" hidden></div>
     <div class="toast" role="status" aria-live="polite" hidden></div>`;
 
@@ -253,14 +257,14 @@ export function initScreens(root, a) {
     root,
     loading: q('[data-screen="loading"]'), start: q('[data-screen="start"]'), pause: q('[data-screen="pause"]'),
     over: q('[data-screen="over"]'), board: q('[data-screen="board"]'),
-    hint: q('.hint'), count: q('.countdown'), toast: q('.toast'),
+    hint: q('.hint'), count: q('.countdown'), toast: q('.toast'), skip: q('.skip-warmup'),
   };
   for (const k of ['loading', 'start', 'pause', 'over', 'board']) els[k].hidden = true;
 
   const map = {
     play: 'onPlay', daily: 'onDaily', resume: 'onResume', restart: 'onRestart', quit: 'onQuit',
     again: 'onPlayAgain', share: 'onShare', sharex: 'onShareX', menu: 'onMenu', signin: 'onSignIn', leaderboard: 'onLeaderboard',
-    'retry-board': 'onLeaderboard',
+    'retry-board': 'onLeaderboard', 'skip-warmup': 'onSkipWarmup',
   };
   root.addEventListener('click', (e) => {
     const t = e.target.closest('[data-act], [data-toggle]');
@@ -375,17 +379,27 @@ export function showStart({ player, best, dailyBest, dailyLabel, settings, isTou
 
 export function showWarmupHint(hint, isTouch = false) {
   if (!hint) { els.hint.hidden = true; return; }
-  els.hint.textContent = hint === 'move' && isTouch ? TEXT.warmup.moveTouch : TEXT.warmup[hint];
+  els.hint.textContent = isTouch && (hint === 'move' || hint === 'dash') ? TEXT.warmup[hint + 'Touch'] : TEXT.warmup[hint];
   els.hint.hidden = false;
+  els.hint.classList.remove('is-in');
+  void els.hint.offsetWidth;
+  els.hint.classList.add('is-in');   // a short fade in
+}
+
+/** The Skip button of the first-run warm-up (also Esc): shown while the warm-up runs. */
+export function showSkip(visible) {
+  if (els.skip) els.skip.hidden = !visible;
 }
 
 export function showCountdown(n) {
   els.count.textContent = TEXT.countdown[3 - n];
   els.count.hidden = false;
+  els.count.classList.toggle('is-go', n === 0);   // GO is saffron
   els.count.classList.remove('pop');
   void els.count.offsetWidth;
   els.count.classList.add('pop');
-  if (n === 0) setTimeout(() => { els.count.hidden = true; }, 600);
+  clearTimeout(countHide);
+  if (n === 0) countHide = setTimeout(() => { els.count.hidden = true; }, CONFIG.countdown.goHold * 1000);
 }
 
 export function showPause(settings) {

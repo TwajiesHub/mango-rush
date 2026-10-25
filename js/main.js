@@ -1,6 +1,8 @@
 // Mango Rush — boot, run states and the game loop.   OWNER: Claude Code  ·  STATUS: skeleton (wiring only)
 //
-// Screens: loading -> start -> (warmup, first run only) -> play <-> paused -> dying -> over -> start | play
+// Screens: loading -> start -> (warmup, first run only) -> countdown -> play <-> paused -> dying -> over -> start | play
+// (step 12) Every run begins with a 3-2-1-GO countdown; the run's rng, drops and clock start at GO. The very first run on a device begins with
+// a short skippable warm-up (play/warmup.js) that uses forceDrop only and never counts as a run.
 // 'dying' (step 9) is the game over transition: the final hit's freeze, 0.5 s at 20% speed while the character tumbles, a dot implosion (a 0.4 s fade
 // with reduced motion), then the game over screen. The run is already over (scoring has ended it); only looks move.
 // Each frame: realDt -> dt = realDt * timeScale() (freeze / slow motion) -> update modules -> HUD -> render.
@@ -10,7 +12,7 @@ import { state } from './core/state.js';
 import { EVENTS, on, emit } from './core/events.js';
 import { CONFIG, phaseAt, tuneIsChanged, markUnranked } from './core/config.js';
 import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
-import { initStore, loadProgress, recordRun, loadSettings, saveSettings, setWarmupDone, bankHintDone, setBankDone } from './core/store.js';
+import { initStore, loadProgress, recordRun, loadSettings, saveSettings, bankHintDone, setBankDone, bankHintShown, setBankHintShown } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
 import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, warmUp, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
@@ -18,8 +20,9 @@ import { createFrameClock } from './core/frameclock.js';
 import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation, juicePatches, wetBandFrac } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney, getJourneyDebug } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose, startTumble, updateTumble, endTumble } from './play/player.js';
-import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop } from './play/drops.js';
-import { initBank, resetBank, updateBank, bankSpots } from './play/bank.js';
+import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop, suspendSchedule } from './play/drops.js';
+import { initBank, resetBank, updateBank, bankSpots, highlightNearestBank } from './play/bank.js';
+import { startWarmup, updateWarmup, skipWarmup, warmupActive, cancelWarmup } from './play/warmup.js';
 import { initPlank, updatePlank, getPlankDebug } from './play/plank.js';
 import { initHappenings, resetHappenings, updateHappenings, getHappeningDebug, startNextHappening, sendBatNow } from './play/happenings.js';
 import { resetScoring, updateScoring, endRun, scoringSelfTest, debugFillMadness, debugLastLife, debugBestAbove } from './play/scoring.js';
@@ -59,7 +62,7 @@ async function boot() {
   clock = createFrameClock({ forceCap: getGpuInfo().intel });
   initJuice({ scene, camera, popupRoot: $('popups-root') });
   initAudio({ musicUrl: `./${CONFIG.music.url}` });
-  initInput($('scene'), { onPause: togglePause, canPlay: () => state.screen === 'play', onJoystick: setJoystick });
+  initInput($('scene'), { onPause: togglePause, canPlay: () => state.screen === 'play' || state.screen === 'warmup', onJoystick: setJoystick });
   initHud($('hud-root'), { onPause: togglePause, onDash: queueDash });
   initScreens($('screens-root'), {
     onPlay: () => startRun('free'),
@@ -71,6 +74,7 @@ async function boot() {
     onMenu: toMenu,
     onShare: share,
     onShareX: shareOnX,
+    onSkipWarmup: skipWarmup,
     onSettings: applySettings,
     onSignIn: () => { location.href = signInUrl(); },
     onLeaderboard: openLeaderboard,
@@ -136,6 +140,7 @@ function fitDeckToScreen() {
 }
 
 function toMenu() {
+  cancelWarmup();
   clearDrops();
   resetJourney();   // the start screen is always golden hour (the journey's clock reads 0 there)
   setScreen('start');
@@ -146,13 +151,18 @@ function toMenu() {
   showStart({ player: state.player, best: state.best, dailyBest: state.dailyBest, dailyLabel: dailyLabel(), settings: state.settings, isTouch: isTouch() });
 }
 
+// the run in preparation: the mode and seed, and where we are in the countdown (the seed is chosen now; the rng is created at GO)
+let pre = { mode: 'free', seed: 1, t: 0, n: 4 };
+let resumeTo = 'play';   // the screen a paused game goes back to (play, or the countdown / warm-up it was paused in)
+
 async function startRun(mode) {
   // never let audio hold the run back: a browser may leave resume() pending until a real gesture
   await Promise.race([unlockAudio(), new Promise((r) => setTimeout(r, 300))]);
+  cancelWarmup();
   state.mode = mode;
   runTuned = tuneIsChanged();
-  const seed = mode === 'daily' ? dailySeed() : randomSeed();
-  const rng = createRng(seed);
+  pre = { mode, seed: mode === 'daily' ? dailySeed() : randomSeed(), t: 0, n: 4 };
+  // the deck, the HUD and the camera are ready now; the drops, the happenings and the run clock start at GO
   state.time = 0;
   state.phase = 'golden';
   fitDeckToScreen();   // the deck's shape first: the bank spots and the golden plank are laid out on it
@@ -163,44 +173,82 @@ async function startRun(mode) {
   resetScoring();
   resetPlayer();
   resetBank();
-  resetDrops(rng);   // (also chooses the golden plank's segments)
-  hintShown = false;
-  resetHappenings(createRng(seed ^ 0x9e3779b9), createRng(seed ^ CONFIG.adrenaline.madness.tableSeed));
+  suspendSchedule();   // no drops yet, and no rng drawn
   resetJourney();
-  fitDeckToScreen();
   hideScreens();
-  // Space must always dash during a run: a button that kept the focus (Play, Play again) must not swallow it
   if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   showHud(true);
   showTouchControls(isTouch());
   setCameraMode('play');
   setFollowTarget(getPlayer().object);
   lastSummary = null;
-  setScreen('play'); // TODO(Claude Code): first-run warm-up + countdown before 'play'
+  const firstRun = !loadProgress().warmupDone || location.search.includes('warmup');   // ?warmup forces it again (for testing)
+  if (firstRun) { setScreen('warmup'); startWarmup({ isTouch: isTouch(), onDone: beginCountdown }); }
+  else beginCountdown();
+}
+
+function beginCountdown() {
+  pre.t = 0;
+  pre.n = 4;
+  setScreen('countdown');
+}
+
+// 3, 2, 1, GO: CONFIG.countdown.step apart; the run starts at GO. (Paused time does not count: this advances only on the countdown screen.)
+function updateCountdown(realDt) {
+  pre.t += realDt;
+  const n = Math.max(0, 3 - Math.floor(pre.t / CONFIG.countdown.step));
+  if (n === pre.n) return;
+  pre.n = n;
+  emit(EVENTS.COUNTDOWN, { n });
+  showCountdown(n);
+  if (n === 0) goRun();
+}
+
+// GO: the run's own rng, drops, happenings and clock begin here
+function goRun() {
+  const { mode, seed } = pre;
+  const rng = createRng(seed);
+  state.time = 0;
+  state.phase = 'golden';
+  resetScoring();
+  resetPlayer();
+  resetBank();
+  resetDrops(rng);   // (also chooses the golden plank's segments)
+  hintShown = false;
+  resetHappenings(createRng(seed ^ 0x9e3779b9), createRng(seed ^ CONFIG.adrenaline.madness.tableSeed));
+  resetJourney();
+  setScreen('play');
   emit(EVENTS.RUN_START, { mode, seed });
 }
 
 function togglePause() {
-  if (state.screen === 'play') pause();
-  else if (state.screen === 'paused') resume();
+  const s = state.screen;
+  if (s === 'warmup') skipWarmup();                         // Esc during the warm-up skips it
+  else if (s === 'play' || s === 'countdown') pause();
+  else if (s === 'paused') resume();
 }
 function pause() {
+  resumeTo = state.screen;
   setScreen('paused');
   showPause(state.settings);
   emit(EVENTS.PAUSE, {});
 }
 function resume() {
   hideScreens();
-  setScreen('play');
+  setScreen(resumeTo);
   emit(EVENTS.RESUME, {});
 }
 
-// the one-time teaching hint: the first time (on this device) the pot passes 500, once per run, until the player has banked for the first time
+// the one-time teaching hint: the first time (on this device) a pot reaches CONFIG.bank.hintPot (1,000), ONCE, unless the player has already banked.
+// The banner says "Walk into a glowing spot to bank it" and the nearest spot pulses.
 let hintShown = false;
 on(EVENTS.POT_CHANGE, (e) => {
-  if (hintShown || state.screen !== 'play' || e.pot < CONFIG.bank.hintPot || bankHintDone()) return;
+  if (hintShown || state.screen !== 'play' || e.pot < CONFIG.bank.hintPot || bankHintDone() || bankHintShown() || botModule?.isSimulating()) return;
   hintShown = true;
+  setBankHintShown();
   showBanner(TEXT.hud.bankHint, CONFIG.bank.hintMs);
+  const pl = getPlayer();
+  highlightNearestBank(pl.x, pl.z, CONFIG.bank.hintHighlight);
 });
 on(EVENTS.POT_BANKED, () => { if (!botModule?.isSimulating()) setBankDone(); });
 
@@ -317,10 +365,10 @@ async function share() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && state.screen === 'play') pause();
+  if (document.hidden && (state.screen === 'play' || state.screen === 'countdown')) pause();
   if (!document.hidden) refreshPlayer();
 });
-addEventListener('blur', () => { if (state.screen === 'play') pause(); });
+addEventListener('blur', () => { if (state.screen === 'play' || state.screen === 'countdown') pause(); });
 addEventListener('resize', () => { if (state.screen === 'start' || state.screen === 'over') fitDeckToScreen(); });
 
 // ---------------------------------------------------------------- loop
@@ -350,6 +398,15 @@ function frame(ts) {
     updateBank(dt);
     updateScoring(dt);
     updateHud();
+  } else if (state.screen === 'warmup' || state.screen === 'countdown') {
+    // before the run: the character can move and dash in the warm-up (nothing counts); in the countdown it stands ready. No run clock, no schedule.
+    const input = readInput();
+    input.dash = takeDash();
+    if (state.screen === 'countdown') { input.x = 0; input.z = 0; input.dash = false; }
+    updatePlayer(dt, input);
+    if (state.screen === 'warmup') { updateWarmup(dt); updateDrops(dt); }
+    updateHud();
+    if (state.screen === 'countdown') updateCountdown(realDt);
   } else if (state.screen === 'dying') {
     // the game over transition: the clock is the real one; the world moves at the juice time scale (frozen, then 20%)
     updateTumble(timeScale() > 0 ? realDt : 0);
@@ -357,7 +414,7 @@ function frame(ts) {
     if (dyingLeft <= 0) finishRun();
   } else if (state.screen !== 'paused') { idlePlayer(realDt, state.screen);
   }
-  updateJourney(state.screen === 'play' ? dt : realDt * 0.3);
+  updateJourney(state.screen === 'play' || state.screen === 'warmup' || state.screen === 'countdown' ? dt : realDt * 0.3);
   updateBarge(dt);
   updateJuice(realDt);
   updateAdrenaline(realDt);

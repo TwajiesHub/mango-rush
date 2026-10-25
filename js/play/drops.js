@@ -759,6 +759,14 @@ export function resetDrops(r) {
   for (const k of Object.keys(seen)) seen[k] = false;
 }
 
+/** Step 12: the first-run warm-up. Turns the drop SCHEDULE off (no rng is touched: the run's own rng is created at GO) and clears the deck; forceDrop still works. resetDrops(rng) turns the schedule back on. */
+export function suspendSchedule() {
+  rng = null;
+  pending = null;
+  clearDrops();
+  clearJuicePatches();
+}
+
 export function clearDrops() {
   for (let i = items.length - 1; i >= 0; i--) release(items[i]);
   items.length = 0;

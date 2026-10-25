@@ -18,7 +18,9 @@
 //   setWarmupDone() -> void
 //
 //   bankHintDone() -> boolean   true once the player has banked a pot on this DEVICE (key "mango-rush:device"): the one-time
-//   setBankDone() -> void       "Dash into a crate to bank your pot" hint is never shown again after that.
+//   setBankDone() -> void       "Walk into a glowing spot to bank it" hint is never shown again after that.
+//   bankHintShown() -> boolean  step 12: the hint is also shown only ONCE per device (the first time a pot reaches CONFIG.bank.hintPot),
+//   setBankHintShown() -> void  whether or not the player banked.
 //
 //   loadSettings() -> { music: boolean, sfx: boolean, reducedMotion: boolean }
 //     Defaults: music true, sfx true, reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -110,6 +112,15 @@ let bankDone = null;   // null = not read yet
 export function bankHintDone() {
   if (bankDone === null) bankDone = readJson('mango-rush:device')?.bankDone === true;
   return bankDone;
+}
+let hintShownFlag = null;
+export function bankHintShown() {
+  if (hintShownFlag === null) hintShownFlag = readJson('mango-rush:device')?.hintShown === true;
+  return hintShownFlag;
+}
+export function setBankHintShown() {
+  hintShownFlag = true;
+  writeJson('mango-rush:device', { ...(readJson('mango-rush:device') || {}), hintShown: true });
 }
 export function setBankDone() {
   bankDone = true;
