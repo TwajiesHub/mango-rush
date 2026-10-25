@@ -54,16 +54,21 @@ export const CONFIG = Object.freeze({
     aloneFor: 2,              // a type's first appearance in a run falls with nothing else landing within this many seconds
   },
 
-  // Scripted happenings (seconds into the run). happenings.js reads this.
-  happenings: [
-    { id: 'bridge', t: 86, length: 10 },
-    { id: 'gust', t: 120, length: 6 },
-    { id: 'gust', t: 180, length: 6 },
-    { id: 'bigone', t: 210, length: 3 },
-  ],
+  // Scripted happenings (step 8), all on the RUN CLOCK; play/timeline.js builds them (drawing from the happenings rng at reset only).
+  happenings: {
+    warnTime: 2,              // HAPPENING_WARN this many seconds before each scripted happening
+    bridge: { t: 86, length: 10 },                 // Lights out: the bridge passes over the barge
+    darkFade: 1, darkLevel: 0.25,                  // 1 s fade in / out; the scene keeps about this share of its light
+    gusts: [{ t: 120, length: 6 }, { t: 180, length: 6 }],
+    gustStrength: 1.2, gustEase: 0.5, gustCone: 30,  // units / second; ease in and out; mostly sideways: within this many degrees of left or right
+    bigone: { spawnAt: 207, warn: 3, holdFrom: 206, holdTo: 211, bonus: 500 },   // lands at 210 s; every other drop is held 206..211
+    showers: [98, 152, 215], showerLength: 3, showerCount: 10, showerAfter: 0.5, showerWarn: 1.0,   // ~10 mangoes over 3 s, no coconut lands in it or the 0.5 s after
+  },
+  bigRadius: 3.0,             // The Big One's hit radius (its ring closes to this)
   volleys: { fromPhase: 'night', size: [2, 3], chance: 0.3 },
-  bat: { fromPhase: 'dusk', every: [25, 40], warn: 1.0 },
-  happeningWarnTime: 2,       // banner + music drop before a happening
+  // the fruit bat: from 'from' s, every 'every' s (all times drawn at reset); a straight path across the deck shown as dots 'warn' s ahead
+  bat: { from: 60, every: [25, 40], count: 30, warn: 1.0, swoop: 0.8, width: 0.8, buffer: 4, bodyRadius: 0.45, playerRadius: 0.4 },
+  happeningWarnTime: 2,
 
   // Thrill pass A (step 7): lead-aimed coconuts, patterns at every wave peak, golden mango = double danger. All of it is drawn from the run rng
   // with a fixed number of draws per spawn event (play/drops.js header), so the Daily Run is the same for everyone.

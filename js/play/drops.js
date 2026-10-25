@@ -68,6 +68,14 @@
 // already made, so the order never changes.
 // Fall time equals the warning time, so the ring is always honest. Pooled: no allocation per frame.
 // Catching calls scoring.fruitCaught(); landing calls scoring.coconutLanded().
+//
+// HAPPENINGS (step 8). setTimeline(tl) (called by happenings.js at reset) gives drawEvent the holds: nothing launches during the Big One's window
+// (206..211 s) and no coconut LANDS during a shower or the 0.5 s after (timeline.holdReady); the draws are still all made, so the Daily Run order
+// never changes. state.wind (a gust, written by happenings.js) pushes FALLING items (not drifters, late-locks or the Big One) sideways: their
+// landing spot, ring and shadow slide with the drifter's trailing-dot tell, and every spot locks CONFIG.coconuts.minLock before impact; landed items
+// never move. spawnBig(x, z, warn) launches THE BIG ONE: a giant coconut aimed at (x, z) (it never follows), ring radius CONFIG.bigRadius closing in
+// like every ring, a slow heavy pulse; it lands through coconutLanded({ big: true }) and escaping the ring pays +500 into the pot (a shield-blocked
+// or invulnerable landing pays nothing). snatchAt(x, z, r) -> n   the fruit bat snatches mangoes and golden mangoes (falling or landed) within r.
 // STEP 5b: a catch passes { dashing, onPlank } (a Swoop / the golden plank); a landed mango or golden mango that rots away uncaught leaves a
 // juice patch (barge.addJuicePatch); the ring shader now lives in world/rings.js (also used by the bank spots).
 
@@ -76,9 +84,10 @@ import { CONFIG, difficultyAt, waveAt, phaseAt } from '../core/config.js';
 import { createDealer } from '../core/bag.js';
 import { state } from '../core/state.js';
 import { EVENTS, on, emit } from '../core/events.js';
-import { fruitCaught, coconutLanded } from './scoring.js';
+import { fruitCaught, coconutLanded, bigOneSurvived } from './scoring.js';
 import { getPlayer, playerAt, refillDash } from './player.js';
 import { resetPlank, onPlank } from './plank.js';
+import { holdReady } from './timeline.js';
 import { deckBounds, addJuicePatch, clearJuicePatches, updateJuicePatches } from '../world/barge.js';
 import { burst } from '../fx/juice.js';
 import { ringGeo, makeRingMaterial, RING_OUTER, tickRings } from '../world/rings.js';
@@ -94,6 +103,8 @@ const RING_DOT = 1.25;    // the default dot size of a warning ring (the tell ho
 const CLOSE_IN = 1.6;     // a ring starts this many times its final size and closes in to 1.0x at impact
 // RING_OUTER (world/rings.js): the radius of each ring's outermost dots: the final scale puts them exactly on the radius that counts
 const ringFinal = (type) => (type === 'coconut' ? CONFIG.hitRadius : CONFIG.catchRadius) / RING_OUTER[type];
+const BIG_SCALE = 3.3;      // The Big One is drawn this many times larger than a coconut
+const BIG_GROUND = 1.55;   // ...so it rests this high
 const LEAN = 0.26;        // the mango leans about 15 degrees
 const WHITE = new THREE.Color(0xffffff);
 const ROT_TINT = new THREE.Color('#8a6a4c');   // multiplies the painted colours: a landed mango goes browner and darker
@@ -322,7 +333,7 @@ function applyMercy(p) {
 }
 
 function setFall(it, yStart, fromAge) {
-  const h = yStart - GROUND[it.type];
+  const h = yStart - it.ground;
   const T = it.warn - fromAge;
   let g = D.gravity;
   let v0 = (h - 0.5 * g * T * T) / T;
@@ -335,9 +346,12 @@ function setFall(it, yStart, fromAge) {
 
 const tmp = { x: 0, z: 0 };
 
-function launch(type, x, z, warn, kind = 'normal') {
+function launch(type, x, z, warn, kind = 'normal', big = false) {
   const it = acquire(type);
-  const ground = GROUND[type];
+  it.big = big;
+  it.windTrail = false;
+  it.ground = big ? BIG_GROUND : GROUND[type];
+  const ground = it.ground;
   it.id = nextId++;
   it.kind = kind;
   it.x = x;
@@ -362,9 +376,9 @@ function launch(type, x, z, warn, kind = 'normal') {
   it.bodyMat.color.set(0xffffff);   // white = as painted
   it.mesh.position.set(x, D.height, z);
   it.mesh.rotation.set(0, Math.random() * 6, 0);
-  it.mesh.scale.setScalar(ITEM_SCALE);
+  it.mesh.scale.setScalar(big ? ITEM_SCALE * BIG_SCALE : ITEM_SCALE);
   it.mesh.visible = true;
-  it.final = ringFinal(type);
+  it.final = big ? CONFIG.bigRadius / RING_OUTER.coconut : ringFinal(type);
   it.marker.position.set(x, 0.03, z);
   it.marker.scale.setScalar(it.final * CLOSE_IN);
   const u = it.ringMat.uniforms;
@@ -374,7 +388,7 @@ function launch(type, x, z, warn, kind = 'normal') {
   u.uColor.value.copy(it.baseColor);
   it.marker.visible = true;
   it.shadow.position.set(x, 0.012, z);
-  it.shadow.scale.set(0.62, 1, 0.62);
+  it.shadow.scale.set(0.62 * (big ? BIG_SCALE : 1), 1, 0.62 * (big ? BIG_SCALE : 1));
   it.shadowMat.opacity = 0.35;
   it.shadow.visible = true;
   items.push(it);
@@ -402,6 +416,32 @@ function startDrift(it, driftA01, driftD01) {
   it.dirX = (it.ex - it.x) / len;
   it.dirZ = (it.ez - it.z) / len;
   emit(EVENTS.DRIFT_START, { id: it.id, x: it.x, z: it.z });
+}
+
+// THE BIG ONE: aimed at (x, z) (where the player stood when it spawned), never follows; warn seconds to land
+export function spawnBig(x, z, warn) {
+  if (!scene) return null;
+  tmp.x = x;
+  tmp.z = z;
+  clampDeck(tmp);
+  const it = launch('coconut', tmp.x, tmp.z, warn, 'normal', true);
+  setRingTell(it.id, { pulse: 0.8, pulseAmt: 0.12, dotSize: RING_DOT * 1.1 });   // a slow, heavy pulse for the huge ring
+  return it;
+}
+
+// the fruit bat snatches mangoes and golden mangoes (falling or landed) near (x, z): no score, no juice patch
+export function snatchAt(x, z, r) {
+  let n = 0;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if ((it.type !== 'mango' && it.type !== 'golden') || Math.hypot(it.x - x, it.z - z) > r) continue;
+    emit(EVENTS.ITEM_SNATCHED, { type: it.type, x: it.x, z: it.z });
+    release(it);
+    items[i] = items[items.length - 1];
+    items.pop();
+    n++;
+  }
+  return n;
 }
 
 export function forceDrop(type, x, z, warn, kind = 'normal') {
@@ -446,6 +486,8 @@ function separate(pos) {
 }
 
 const spot = { x: 0, z: 0 };
+let timeline = null;
+export function setTimeline(tl) { timeline = tl; }
 const T7 = CONFIG.thrill;
 const HOT_RED = new THREE.Color('#E4573D');
 // THRILL: the golden mango that makes the deck dangerous (set when an event launches it; the window is on the schedule clock)
@@ -570,6 +612,8 @@ function drawEvent() {
     if (clear > ready) ready = clear;
   }
   if (early && ready > CONFIG.earlyGolden.to - 0.5) ready = now;   // the early win never waits itself out of its window
+  // happenings: nothing launches in the Big One's window, and no coconut lands during a shower (the draws above are already made)
+  if (timeline) ready = holdReady(timeline, ready, ev.warn + (type === 'pattern' ? T7.patterns.sweep.count * T7.patterns.sweep.step : 0), type === 'coconut' || type === 'pattern');
   ev.ready = ready;
   ev.next = Math.max(now + gap * (D.gapJitter[0] + (D.gapJitter[1] - D.gapJitter[0]) * uGap), ready);
   ev.gap = ev.next - now;
@@ -796,7 +840,7 @@ export function updateDrops(dt) {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i];
     const fruit = it.type !== 'coconut';
-    const ground = GROUND[it.type];
+    const ground = it.ground;
     it.t += dt;
     if (it.sparkle) {   // a twinkle
       const tw = 0.35 + 0.65 * Math.abs(Math.sin(it.t * 5));
@@ -815,6 +859,30 @@ export function updateDrops(dt) {
         it.marker.position.z = it.z;
         it.shadow.position.x = it.x;
         it.shadow.position.z = it.z;
+      }
+      // a GUST pushes falling items: the landing spot (ring, shadow) slides with the wind until it locks minLock before impact
+      const wind = state.wind;
+      if (it.kind !== 'drifter' && it.kind !== 'late' && !it.big) {
+        if ((wind.x !== 0 || wind.z !== 0) && it.warn - it.age > C.minLock) {
+          tmp.x = it.x + wind.x * dt;
+          tmp.z = it.z + wind.z * dt;
+          clampDeck(tmp);
+          it.x = tmp.x;
+          it.z = tmp.z;
+          it.mesh.position.x = it.x;
+          it.mesh.position.z = it.z;
+          it.marker.position.x = it.x;
+          it.marker.position.z = it.z;
+          it.shadow.position.x = it.x;
+          it.shadow.position.z = it.z;
+          const wl = Math.hypot(wind.x, wind.z);
+          const k = C.drifter.trail / it.marker.scale.x * 2 / wl;
+          it.ringMat.uniforms.uTrail.value.set(wind.x * k, -wind.z * k);   // the dots trail behind the slide, like a drifter's
+          it.windTrail = true;
+        } else if (it.windTrail) {
+          it.ringMat.uniforms.uTrail.value.set(0, 0);
+          it.windTrail = false;
+        }
       }
       const progress = Math.min(1, it.age / it.warn);
       const hanging = it.age < it.hangUntil;
@@ -840,7 +908,7 @@ export function updateDrops(dt) {
       it.marker.scale.setScalar(sc);
       if (it.kind === 'drifter' && !it.locked) it.ringMat.uniforms.uTrail.value.set(it.dirX * C.drifter.trail / sc * 2, -it.dirZ * C.drifter.trail / sc * 2);
       // the blob shadow tightens and darkens as the item falls: the landing spot gets easier to read
-      const sh = 0.62 - 0.34 * progress;
+      const sh = (0.62 - 0.34 * progress) * (it.big ? BIG_SCALE : 1);
       it.shadow.scale.set(sh, 1, sh);
       it.shadowMat.opacity = 0.35 + 0.65 * progress;
 
@@ -856,12 +924,14 @@ export function updateDrops(dt) {
         } else {
           it.life = D.coconutLinger;
           burst({ x: it.x, y: 0.1, z: it.z }, '#c9a26b', 10, 3);
-          emit(EVENTS.DROP_LAND, { id: it.id, type: it.type, x: it.x, z: it.z });
+          emit(EVENTS.DROP_LAND, { id: it.id, type: it.type, x: it.x, z: it.z, big: it.big });
           // PERFECT DODGE: a dash that began within the window, from inside the hit radius, and the player is outside it now
-          const perfect = dist > CONFIG.hitRadius && state.time - pl.dashStartT <= CONFIG.perfectDodgeWindow
-            && Math.hypot(it.x - pl.dashStartX, it.z - pl.dashStartZ) <= CONFIG.hitRadius;
-          const result = coconutLanded({ x: it.x, z: it.z, dist, invulnerable: pl.invulnerable, perfect, big: false });
+          const rad = it.big ? CONFIG.bigRadius : CONFIG.hitRadius;
+          const perfect = dist > rad && state.time - pl.dashStartT <= CONFIG.perfectDodgeWindow
+            && Math.hypot(it.x - pl.dashStartX, it.z - pl.dashStartZ) <= rad;
+          const result = coconutLanded({ x: it.x, z: it.z, dist, invulnerable: pl.invulnerable, perfect, big: it.big });
           if (result === 'perfect') refillDash();
+          if (it.big && dist > rad) bigOneSurvived({ x: it.x, z: it.z });   // escaping the ring pays; a shield-blocked or invulnerable landing does not
         }
       }
     } else {

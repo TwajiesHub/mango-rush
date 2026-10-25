@@ -35,7 +35,7 @@ export const EVENTS = Object.freeze({
                                     //   fallAt = seconds after the spawn when the item really starts to fall (a slow coconut hangs first)
   RING_LOCK: 'ring:lock',           // { id, kind, x, z }   a drifter / late-lock coconut's landing spot just locked (nothing moves after this)
   DRIFT_START: 'drift:start',       // { id, x, z }   a drifter's landing spot starts to slide (the wind)
-  DROP_LAND: 'drop:land',           // { id, type, x, z }
+  DROP_LAND: 'drop:land',           // { id, type, x, z, big }   big = The Big One
   // type is one of: 'mango'|'golden'|'rotten'|'coconut'|'shield'|'bigone'
 
   // ---- scoring results (emitted by play/scoring.js)
@@ -68,6 +68,9 @@ export const EVENTS = Object.freeze({
   HAPPENING_WARN: 'happening:warn', // { id: 'gust'|'bat'|'bigone'|'shower'|'volley'|'bridge', inSeconds }
   HAPPENING_START: 'happening:start', // { id }
   HAPPENING_END: 'happening:end',   // { id }
+  BAT_HIT: 'bat:hit',               // { x, z }   the fruit bat touched the player: the combo dropped one step (no life, no pot loss)
+  ITEM_SNATCHED: 'item:snatched',   // { type, x, z }   the bat snatched a mango (no score, no juice patch)
+  BIGONE_SURVIVED: 'bigone:survived', // { x, z, bonus }   the player escaped The Big One's ring: +bonus into the pot
 
   // ---- start.ng leaderboard (emitted by main.js)
   LEADERBOARD_SAVED: 'leaderboard:saved', // { ok, rank, best, improved, error }   after a signed-in run is saved

@@ -19,7 +19,7 @@ import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPla
 import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop } from './play/drops.js';
 import { initBank, resetBank, updateBank, bankSpots } from './play/bank.js';
 import { initPlank, updatePlank, getPlankDebug } from './play/plank.js';
-import { resetHappenings, updateHappenings } from './play/happenings.js';
+import { initHappenings, resetHappenings, updateHappenings, getHappeningDebug, startNextHappening, sendBatNow } from './play/happenings.js';
 import { resetScoring, updateScoring, endRun, scoringSelfTest } from './play/scoring.js';
 import { initJuice, timeScale, updateJuice, setPlayerObject } from './fx/juice.js';
 import { initAudio, unlockAudio, setMusicEnabled, setSfxEnabled, updateAudio } from './audio/audio.js';
@@ -78,6 +78,7 @@ async function boot() {
   initDrops(deckRoot());
   initBank(deckRoot());
   initPlank(deckRoot());
+  initHappenings(deckRoot());
 
   await loadPlayer();
   warmUp();   // compile every shader now, behind the loading screen
@@ -315,7 +316,7 @@ function benchBusyScene(pr = 1.5, frames = 90) {
 function getPerf() {
   const s = clock.stats();
   const q = getQualityInfo();
-  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer, drops: getDropDebug(), plank: getPlankDebug(), banks: bankSpots(), pot: state.pot, stats: state.stats, journey: getJourneyDebug(), wet: wetBandFrac(), patches: juicePatches().filter((p) => p.life > 0).map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1), life: +p.life.toFixed(1) })) };
+  return { fps: s.fps, avgMs: s.avgMs, worstMs: s.worstMs, refreshHz: s.refreshHz, capFps: s.capFps, capped: s.capped, antialias: q.antialias, pixelRatio: q.pixelRatio, level: q.level, levels: q.levels, gpu: getGpuInfo().renderer, drops: getDropDebug(), plank: getPlankDebug(), banks: bankSpots(), pot: state.pot, stats: state.stats, journey: getJourneyDebug(), happenings: getHappeningDebug(), wet: wetBandFrac(), patches: juicePatches().filter((p) => p.life > 0).map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1), life: +p.life.toFixed(1) })) };
 }
 
 // ---------------------------------------------------------------- debug (only with ?debug in the URL)
@@ -358,6 +359,16 @@ if (location.search.includes('debug')) {
     const next = CONFIG.phases.find((p) => p.t > state.time);
     if (!next) return;
     state.time = next.t + 0.01;
+    markUnranked();
+    runTuned = true;
+    window.__tune?.refresh?.();
+  });
+  // H starts the next scripted happening now; B sends a fruit bat now. Both mark the run "TUNING · NOT RANKED" (like N and the tuning panel).
+  addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if ((k !== 'h' && k !== 'b') || e.repeat || e.ctrlKey || e.metaKey || e.altKey || state.screen !== 'play') return;
+    const ok = k === 'h' ? startNextHappening() : sendBatNow();
+    if (!ok) return;
     markUnranked();
     runTuned = true;
     window.__tune?.refresh?.();

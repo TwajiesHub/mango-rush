@@ -38,6 +38,7 @@ import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on, emit } from '../core/events.js';
 import { smoothInput, accelerateVelocity } from '../core/motion.js';
+import { playerOutlineMaterial } from '../world/materials.js';
 import { buildCharacter, updateCharacterMotion, animateCharacter, disposeCharacter, triggerReaction, setCharacterPose } from '../world/character.js';
 import { deckBounds, surfaceAt } from '../world/barge.js';
 import { blobShadow } from '../world/materials.js';
@@ -145,6 +146,7 @@ export function initPlayer(s) {
 export function setCharacter(info) {
   if (model) { scene.remove(model); disposeCharacter(model); }
   model = buildCharacter(info.style, info.name);
+  model.traverse((o) => { if (o.userData.isOutline) o.material = playerOutlineMaterial(); });   // the player's outline can glow cream (Lights out)
   model.position.set(x, 0, z);
   model.rotation.y = facing;
   model.userData.motion = camMotion;
@@ -329,8 +331,8 @@ export function updatePlayer(dt, input) {
   // ---- the body
   motion.vx = vel.x;
   motion.vz = vel.z;
-  motion.ax = (vel.x - prevVel.x) / dt;
-  motion.az = (vel.z - prevVel.z) / dt;
+  motion.ax = (vel.x - prevVel.x) / dt + state.wind.x * 18;   // a gust never pushes the player, but the hair and scarf lean with it
+  motion.az = (vel.z - prevVel.z) / dt + state.wind.z * 18;
   motion.dashing = dashT > 0;
   motion.skidding = skidT > 0;
   if (updateCharacterMotion(model, dt, motion) && spd > 1.2) {

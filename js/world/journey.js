@@ -52,9 +52,11 @@ import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, emit } from '../core/events.js';
-import { flat } from './materials.js';
+import { flat } from './materials.js';   // (setPlayerOutlineGlow comes from the same module below)
 import { setLanternLevel, setDeckLook } from './barge.js';
 import { placeIndexAt, phaseBlend, sunDrop, smooth, flashAllowed } from '../core/journeymath.js';
+import { darkAt } from '../play/timeline.js';
+import { setPlayerOutlineGlow } from './materials.js';
 
 const DEG = Math.PI / 180;
 const RIG_DIST = 400;                 // how far in front of the camera the backdrop hangs (it has no depth effect)
@@ -430,31 +432,38 @@ function buildForeground() {
   const s = J.speeds.fg;
   const g = new Geo();
   const r = rnd(5);
-  // the bridge: its deck crosses the top of the view, towers every 3 units, cables swooping between them
-  const b0 = startOf(2, s) + 1.2;
-  const b1 = startOf(3, s) - 1.2;
+  // the bridge (step 8): a short span with a tower at each end, timed so it is OVER the barge exactly while Lights out lasts (the screen's centre is
+  // at c = -speed x time): the right tower is at the centre at 86 s and the left one at 96 s. Approach spans run on beyond the towers.
+  const HP = CONFIG.happenings;
+  const cr = -s * HP.bridge.t;
+  const cl = -s * (HP.bridge.t + HP.bridge.length);
+  const b0 = cr + 1.6;
+  const b1 = cl - 1.6;
   g.rect(b1, 0.3, b0, 0.345);
   g.rect(b1, 0.272, b0, 0.3);    // the girder under the deck
-  const span = 3.2;
   g.begin('lit');
   for (let c = b1 + 0.2; c < b0; c += 0.34) g.circle(c, 0.262, 0.0085, 6);
   g.end();
-  for (let t0 = b0 - 0.8; t0 - span > b1 - span; t0 -= span) {
-    g.rect(t0 - 0.055, -0.25, t0 + 0.055, 0.66);                      // the pillar
-    g.rect(t0 - 0.09, 0.3, t0 + 0.09, 0.37);                          // its cap
-    const t1 = t0 - span;
-    let px = t0;
-    let py = 0.58;
-    for (let i = 1; i <= 14; i++) {                                    // the cable: a sagging curve from tower to tower
+  for (const tx of [cr, cl]) {
+    g.rect(tx - 0.07, -0.25, tx + 0.07, 0.66);                        // the tower
+    g.rect(tx - 0.11, 0.3, tx + 0.11, 0.37);                          // its cap
+  }
+  const cable = (x0, y0, x1, y1, sag) => {                             // a sagging cable with hangers down to the deck
+    let px = x0;
+    let py = y0;
+    for (let i = 1; i <= 14; i++) {
       const u = i / 14;
-      const x = t0 + (t1 - t0) * u;
-      const y = 0.58 - Math.sin(u * Math.PI) * 0.21;
+      const x = x0 + (x1 - x0) * u;
+      const y = y0 + (y1 - y0) * u - Math.sin(u * Math.PI) * sag;
       g.line(px, py, x, y, 0.0075);
-      if (i % 2 === 0 && x > b1 && x < b0) g.line(x, y, x, 0.345, 0.003);   // hangers
+      if (i % 2 === 0) g.line(x, y, x, 0.345, 0.003);
       px = x;
       py = y;
     }
-  }
+  };
+  cable(cr, 0.58, cl, 0.58, 0.21);                                     // between the towers
+  cable(cr, 0.58, b0, 0.345, 0.05);                                    // the stays down to the approach spans
+  cable(cl, 0.58, b1, 0.345, 0.05);
   // overhanging branches in the mangroves: dark leafy clumps hanging from the top edge
   const m0 = startOf(1, s);
   const m1 = startOf(2, s);
@@ -464,6 +473,27 @@ function buildForeground() {
     for (let i = 0; i < 6; i++) g.ellipse(c - 0.05 - i * 0.06, y - 0.02 - (i % 2) * 0.03, 0.06, 0.035, 8);
   }
   return g;
+}
+
+// ---------------------------------------------------------------- mango shower: leafy branches sway in at the top of the screen
+function buildShowerBranches() {
+  const g = new Geo();
+  const r = rnd(41);
+  for (const cx of [-1.35, 0.15, 1.45]) {
+    const y = 0.52;
+    g.line(cx - 0.5, y + 0.14, cx + 0.45, y - 0.04, 0.034);
+    for (let i = 0; i < 9; i++) {
+      const x = cx - 0.45 + i * 0.11;
+      g.ellipse(x, y - 0.02 - (i % 2) * 0.045 + (r() - 0.5) * 0.02, 0.07, 0.04, 8);
+    }
+  }
+  return g;
+}
+let showerMesh = null;
+let showerLevel = 0;
+/** 0..1: how far the shower's branches have swayed in (happenings.js) */
+export function setShowerBranches(level) {
+  showerLevel = level;
 }
 
 // ---------------------------------------------------------------- the layers as meshes
@@ -519,6 +549,8 @@ let hemi = null;
 let key = null;
 let rim = null;
 let skyG = null;
+let skyMesh = null;
+let darkF = 1;        // the light left under the bridge (1 = all of it): Lights out
 let skyGeo = null;
 let starsMesh = null;
 let wings = null;
@@ -543,9 +575,9 @@ export function buildJourney(scene) {
   // sky
   skyG = buildSky();
   skyGeo = skyG.build();
-  const sky = backdrop(new THREE.Mesh(skyGeo, shapesMaterial()), ORDER.sky, true);
-  sky.position.set(0, 0, 0);
-  rig.add(sky);
+  skyMesh = backdrop(new THREE.Mesh(skyGeo, shapesMaterial()), ORDER.sky, true);
+  skyMesh.position.set(0, 0, 0);
+  rig.add(skyMesh);
   starsMesh = backdrop(new THREE.Mesh(buildStars().build(), shapesMaterial()), ORDER.stars, true);
   starsMesh.visible = false;
   rig.add(starsMesh);
@@ -559,6 +591,10 @@ export function buildJourney(scene) {
   makeLayer('far', buildFar(), ORDER.far, J.speeds.far);
   makeLayer('bank', buildBanks(), ORDER.bank, J.speeds.bank);
   makeLayer('fg', buildForeground(), ORDER.fg, J.speeds.fg);
+
+  showerMesh = backdrop(new THREE.Mesh(buildShowerBranches().build(), shapesMaterial()), ORDER.fg + 0.1, false);
+  showerMesh.visible = false;
+  rig.add(showerMesh);
 
   // water: the sun's saffron streaks by day, lit-window reflections under the skyline at night (one instanced mesh, reused)
   streaks = backdrop(new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), flat('#F2A93B'), STREAK_N), ORDER.streaks, false);
@@ -657,6 +693,7 @@ function applyPhase(force) {
   layers.far.tint.copy(now.sky[3]).lerp(now.bank, now.farK);
   layers.fg.tint.copy(now.bank).multiplyScalar(0.8);
   for (const n of ['bank', 'far', 'fg']) layers[n].mesh.material.color.copy(layers[n].tint);
+  showerMesh.material.color.copy(layers.fg.tint);
   layers.bank.litAmount = now.litBank;
   layers.far.litAmount = now.litFar;
   layers.fg.litAmount = now.litBank;
@@ -676,6 +713,19 @@ function applyPhase(force) {
   key.color.copy(now.keyC);
   rim.color.copy(now.rimC);
   waterOut.copy(now.water);
+  waterDirty = true;
+  if (darkF !== 1) applyDark(darkF);
+}
+
+// LIGHTS OUT: scale the scenery's colours by f (the lights, the deck and the water are scaled in updateJourney)
+function applyDark(f) {
+  skyMesh.material.color.setScalar(f);
+  for (const n of ['bank', 'far', 'fg']) layers[n].mesh.material.color.copy(layers[n].tint).multiplyScalar(f);
+  showerMesh.material.color.copy(layers.fg.tint).multiplyScalar(f);
+  sunMesh.material.color.copy(now.sun).multiplyScalar(f);
+  starsMesh.material.color.copy(now.sky[0]).lerp(color.set('#ffffff'), now.stars).multiplyScalar(f);
+  streaks.material.color.copy(now.streak).multiplyScalar(f);
+  waterOut.copy(now.water).multiplyScalar(f);
   waterDirty = true;
 }
 
@@ -741,9 +791,20 @@ export function updateJourney(dt) {
   // the sun sinks over dusk; the moon rises as the night comes
   sunY = 0.05 - sunDrop(t, J.sunSink);
   moonY = -0.3 + (0.3 + J.moonY.night) * smooth((t - 130) / 40) + (J.moonY.midnight - J.moonY.night) * smooth((t - 205) / 45);
+  const dark = screen === 'start' || screen === 'loading' ? 0 : darkAt(t);       // Lights out: about 25% of the light under the bridge
+  const f = 1 - (1 - CONFIG.happenings.darkLevel) * dark;
+  if (f !== darkF) { darkF = f; applyDark(f); }
+  setPlayerOutlineGlow(dark);
   const moonA = smooth((t - 135) / 30);
   moonMesh.visible = moonA > 0.01;
-  moonMesh.material.color.setScalar(moonA);
+  moonMesh.material.color.setScalar(moonA * darkF);
+
+  // the shower's branches sway in at the top of the screen
+  showerMesh.visible = showerLevel > 0.01;
+  if (showerMesh.visible) {
+    showerMesh.position.y = (1 - smooth(showerLevel)) * 0.7;
+    showerMesh.rotation.z = reduced ? 0 : Math.sin(clock * 2.2) * 0.02 * showerLevel;
+  }
 
   // lanterns: light from dusk, fading in over a few seconds, with a slight flicker
   const lit = smooth((t - J.lantern.from) / J.lantern.fade);
@@ -755,11 +816,14 @@ export function updateJourney(dt) {
   const flash = reduced ? 0 : flashEnvelope();
   deckOut.copy(now.deck);
   if (flash > 0.001) { flashTint.copy(flashCol); deckOut.lerp(flashTint, flash); }
-  waterMul.setRGB(now.water.r / Math.max(PAL.golden.water.r, 1e-4), now.water.g / Math.max(PAL.golden.water.g, 1e-4), now.water.b / Math.max(PAL.golden.water.b, 1e-4));
+  deckOut.multiplyScalar(darkF);
+  waterMul.setRGB(now.water.r / Math.max(PAL.golden.water.r, 1e-4), now.water.g / Math.max(PAL.golden.water.g, 1e-4), now.water.b / Math.max(PAL.golden.water.b, 1e-4)).multiplyScalar(darkF);
   setDeckLook({ deck: deckOut, water: waterMul });
-  hemi.intensity = now.hemiI + flash * 0.5;
-  key.intensity = Math.PI * now.keyI;
-  rim.intensity = Math.PI * 0.9 * now.rimI;
+  hemi.intensity = (now.hemiI + flash * 0.5) * darkF;
+  key.intensity = Math.PI * now.keyI * darkF;
+  // under the bridge a soft cream rim lights the player's edges so you always see yourself and your direction
+  rim.intensity = Math.PI * 0.9 * now.rimI * darkF + dark * Math.PI * 1.6;
+  rim.color.copy(now.rimC).lerp(CREAM_C, dark);
 }
 
 let sunY = 0.05;

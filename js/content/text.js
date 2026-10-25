@@ -60,6 +60,7 @@ const TEXT = {
   phases: { golden: 'Golden hour', dusk: 'Dusk', night: 'Night', midnight: 'Midnight' },
 
   happenings: {                                              // warning banners, max 22
+    bridge: 'Lights out',
     gust: 'Gust incoming',
     bat: 'Fruit bat!',
     bigone: 'The Big One',
@@ -85,6 +86,9 @@ const TEXT = {
     slamBank: 'Slam bank +10%',
     goldenPlank: 'Golden plank x2',
     banked: 'Banked',
+    batKnock: 'Bat!',
+    snatched: 'Snatched!',
+    bigOneSurvived: 'Big One survived',
   },
 
   hud: {

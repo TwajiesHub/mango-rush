@@ -23,6 +23,12 @@
 // engine). The chain counts up when a Swoop is made in a NEW dash (one that started after the previous Swoop); it resets when a dash
 // ends without a Swoop (EVENTS.DASH / EVENTS.DASH_END, which this module listens to).
 //   bankPot({ slam = false, x = 0, z = 0, auto = false }) -> number   the amount added to the score (0 when the pot was empty)
+// HAPPENINGS (step 8):
+//   batHit({ x, z }) -> boolean   the fruit bat touched the player: the combo drops ONE step (min x1, comboStep 0; the timer restarts at 50% if
+//     still above x1, else the combo ends). No life, no pot loss, the shield is not used. Emits COMBO_CHANGE { stepDown } and BAT_HIT { x, z }.
+//   bigOneSurvived({ x, z }) -> number   the player escaped The Big One's ring: CONFIG.happenings.bigone.bonus (500) goes into the pot, flat (no
+//     multiplier). Emits BIGONE_SURVIVED { x, z, bonus }. (drops.js calls it only when the player was OUTSIDE the ring: a shield-blocked or
+//     invulnerable landing earns nothing.) coconutLanded({ big: true }) uses CONFIG.bigRadius (3.0) as the hit radius.
 //   Events: POT_CHANGE { pot }, POT_BANKED { amount, slam, auto, x, z }, POT_LOST { amount, x, z }, SWOOP { x, z, points, chain },
 //           SLAM_BANK { x, z, amount, bonus }.   CATCH also carries { swoop, plank, chain }.
 //
@@ -299,7 +305,7 @@ on(EVENTS.DASH_END, () => {
 
 export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
   if (ended) return 'none';
-  const r = CONFIG.hitRadius * (big ? 2.5 : 1);
+  const r = big ? CONFIG.bigRadius : CONFIG.hitRadius;
   if (dist <= r) {
     if (invulnerable) return 'none';
     if (state.shield) {
@@ -352,6 +358,27 @@ export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
     return 'nearmiss';
   }
   return 'none';
+}
+
+export function batHit({ x = 0, z = 0 } = {}) {
+  if (ended) return false;
+  const dropped = state.multiplier > 1;
+  if (dropped) state.multiplier -= 1;
+  state.comboStep = 0;
+  inGrace = false;
+  comboLeft = state.multiplier > 1 ? S.comboWindow * 0.5 : 0;
+  state.comboTimerFrac = comboLeft / S.comboWindow;
+  fire(EVENTS.COMBO_CHANGE, { multiplier: state.multiplier, step: 0, stepUp: false, stepDown: dropped });
+  fire(EVENTS.BAT_HIT, { x, z });
+  return dropped;
+}
+
+export function bigOneSurvived({ x = 0, z = 0 } = {}) {
+  if (ended) return 0;
+  const bonus = CONFIG.happenings.bigone.bonus;
+  addPot(bonus);
+  fire(EVENTS.BIGONE_SURVIVED, { x, z, bonus });
+  return bonus;
 }
 
 export function endRun(reason = 'lives') {
@@ -434,6 +461,19 @@ export function scoringSelfTest() {
     land(0.2);
     check('0 lives ends the run', ended && state.lives === 0);
     check('endRun fires once', endRun() === null);
+    // happenings: a bat knocks the combo down one step, nothing else
+    resetScoring();
+    for (let i = 0; i < 10; i++) mango();
+    check('x3 after 10 catches', state.multiplier === 3);
+    const potBefore = state.pot;
+    batHit({ x: 0, z: 0 });
+    check('a bat drops the combo one step and costs nothing else', state.multiplier === 2 && state.comboStep === 0 && state.lives === 3 && state.pot === potBefore && !state.shield);
+    check('the bat restarts the timer at 50%', Math.abs(state.comboTimerFrac - 0.5) < 1e-9);
+    batHit({ x: 0, z: 0 }); batHit({ x: 0, z: 0 });
+    check('a bat never goes below x1', state.multiplier === 1);
+    const pot2 = state.pot;
+    check('the Big One bonus goes into the pot', bigOneSurvived({ x: 0, z: 0 }) === CONFIG.happenings.bigone.bonus && state.pot === pot2 + CONFIG.happenings.bigone.bonus);
+    check('the big ring is 3 units', land(2.9, { big: true }) === 'hit' || state.lives < 3);
     // Madness: hold x5 until the meter fills
     resetScoring();
     for (let i = 0; i < 20; i++) mango();
@@ -454,7 +494,8 @@ export function scoringSelfTest() {
     fruitCaught({ type: 'shield', x: 0, y: 0, z: 0 });
     land(0.2);
     check('the shield keeps the pot', state.pot === 100);
-    updateScoring(S.comboWindow + S.comboGrace + 0.01);
+    updateScoring(S.comboWindow + 0.01);
+    updateScoring(S.comboGrace + 0.01);
     check('a combo that ends banks the pot', state.pot === 0 && state.score === 420);
   } catch (err) {
     failures.push('threw: ' + err.message);

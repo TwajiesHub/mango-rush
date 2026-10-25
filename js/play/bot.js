@@ -25,6 +25,7 @@ import { resetPlayer, updatePlayer, getPlayer } from './player.js';
 import { resetDrops, updateDrops, getDrops, clearDrops } from './drops.js';
 import { resetBank, updateBank, bankSpots } from './bank.js';
 import { updatePlank } from './plank.js';
+import { resetHappenings, updateHappenings } from './happenings.js';
 import { deckBounds } from '../world/barge.js';
 
 let simulating = false;
@@ -43,23 +44,25 @@ export function think() {
   let danger = false;
   let urgent = false;
   let soon = false;   // a coconut lands within 1.5 s
-  const r = CONFIG.hitRadius + 0.8;
   for (const it of items) {
     if (it.type !== 'coconut' || it.landed) continue;
+    const hit = it.big ? CONFIG.bigRadius : CONFIG.hitRadius;   // The Big One's ring is 3 units
+    const r = hit + 0.8;
     if (it.warn - it.age < 1.5) soon = true;
     if (it.age < reaction) continue;
     const dx = it.x - me.x;
     const dz = it.z - me.z;
     const d = Math.hypot(dx, dz);
     const left = it.warn - it.age;
-    if (d < r && left < 1.2) {
+    if (d < r && left < (it.big ? 2.4 : 1.2)) {
       const push = (r - d + 0.4) / (d + 0.15);
       fx -= dx * push;
       fz -= dz * push;
       danger = true;
-      if (d < CONFIG.hitRadius && left < 0.35) urgent = true;
+      if (d < hit && left < 0.35) urgent = true;
     }
   }
+  const r = CONFIG.hitRadius + 0.8;
   out.dash = false;
   const ready = state.dashReadyFrac >= 1;
   if (danger) {
@@ -134,10 +137,12 @@ export function simulate(opts = {}) {
     resetPlayer();
     resetBank();
     resetDrops(createRng(seed + i));
+    resetHappenings(createRng((seed + i) ^ 0x9e3779b9));   // the same happenings rng main.js uses
     while (state.lives > 0 && state.time < maxSeconds) {
       state.time += dt;
       const input = think();
       updatePlayer(dt, input);
+      updateHappenings(dt);
       updateDrops(dt);
       updatePlank(dt);
       updateBank(dt);

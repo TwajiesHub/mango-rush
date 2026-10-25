@@ -357,7 +357,11 @@ function subscribe() {
   });
   on(EVENTS.DASH, (e) => feel('dash', { x: e.x, y: 0.15, z: e.z }));
   on(EVENTS.COMBO_CHANGE, (e) => { if (e.stepUp) feel('stepUp', null); });
-  on(EVENTS.DROP_LAND, (e) => { if (e.type === 'coconut') addShake(0.12, 18); });
+  on(EVENTS.DROP_LAND, (e) => { if (e.type === 'coconut') addShake(e.big ? 0.6 : 0.12, e.big ? 8 : 18); });   // The Big One: a strong shake (addShake skips it under reduced motion)
+  // happenings (step 8): small pop-ups, the big effects are step 9
+  on(EVENTS.BAT_HIT, (e) => { feel('nearMiss', { x: e.x, y: 0.4, z: e.z }); popup(TEXT.popups.batKnock.toUpperCase(), { x: e.x, y: 2.2, z: e.z }, 'bad'); });
+  on(EVENTS.ITEM_SNATCHED, (e) => popup(TEXT.popups.snatched.toUpperCase(), { x: e.x, y: 1.6, z: e.z }, 'near'));
+  on(EVENTS.BIGONE_SURVIVED, (e) => popup(TEXT.popups.bigOneSurvived.toUpperCase() + ' +' + e.bonus, { x: e.x, y: 2.6, z: e.z }, 'big'));
   on(EVENTS.RUN_END, () => {
     const f = CONFIG.feel.gameOver;
     if (f.freeze) freeze(f.freeze);

@@ -168,6 +168,22 @@ export function outlineMaterial() {
 
 // A shell: every vertex pushed out along the SMOOTHED normal (normals of vertices at the same place are averaged, so flat-shaded and
 // faceted shapes do not tear open). Thickness is in world units, so the line is stable while the camera moves.
+// the PLAYER's outline is its own material (step 8): umber as always, but it glows cream under the bridge (Lights out) so you always see yourself
+let playerOutlineMat = null;
+const OUTLINE_UMBER = new THREE.Color(OUTLINE_COLOR);
+const OUTLINE_CREAM = new THREE.Color('#FFF1D6');
+export function playerOutlineMaterial() {
+  if (!playerOutlineMat) {
+    playerOutlineMat = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide, toneMapped: false });
+    playerOutlineMat.userData.shared = true;
+  }
+  return playerOutlineMat;
+}
+/** 0 = the usual umber outline, 1 = cream (Lights out). */
+export function setPlayerOutlineGlow(k) {
+  playerOutlineMaterial().color.copy(OUTLINE_UMBER).lerp(OUTLINE_CREAM, Math.min(1, Math.max(0, k)));
+}
+
 export function outlineGeometry(geo, thickness = 0.03) {
   const pos = geo.attributes.position;
   const idx = geo.index ? geo.index.array : null;

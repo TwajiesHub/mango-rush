@@ -38,6 +38,9 @@ export const state = {
   // owner: play/player.js
   dashReadyFrac: 1,           // 0 = just used, 1 = ready
 
+  // owner: play/happenings.js
+  wind: { x: 0, z: 0 },       // the gust's push (deck units / second) on FALLING items; the character's hair and scarf lean with it
+
   // owner: core/store.js (loaded at start)
   best: 0,
   dailyBest: 0,
