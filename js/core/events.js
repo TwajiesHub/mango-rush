@@ -31,7 +31,7 @@ export const EVENTS = Object.freeze({
   PLACE_ENTER: 'place:enter',       // { place: 'makoko'|'mangroves'|'bridge'|'waterfront'|'city'|'open' }
 
   // ---- drops (emitted by play/drops.js)
-  DROP_SPAWN: 'drop:spawn',         // { id, type, kind, x, z, warnTime, fallAt }   kind: 'normal'|'slow'|'fast'|'drifter'|'late' (coconuts; others 'normal')
+  DROP_SPAWN: 'drop:spawn',         // { id, type, kind, x, z, warnTime, fallAt, big }   (big: The Big One, step 11)   kind: 'normal'|'slow'|'fast'|'drifter'|'late' (coconuts; others 'normal')
                                     //   fallAt = seconds after the spawn when the item really starts to fall (a slow coconut hangs first)
   RING_LOCK: 'ring:lock',           // { id, kind, x, z }   a drifter / late-lock coconut's landing spot just locked (nothing moves after this)
   DRIFT_START: 'drift:start',       // { id, x, z }   a drifter's landing spot starts to slide (the wind)
@@ -68,6 +68,7 @@ export const EVENTS = Object.freeze({
   HAPPENING_WARN: 'happening:warn', // { id: 'gust'|'bat'|'bigone'|'shower'|'volley'|'bridge', inSeconds }
   HAPPENING_START: 'happening:start', // { id }
   HAPPENING_END: 'happening:end',   // { id }
+  BAT_TELL: 'bat:tell',             // { side }   the fruit bat's dotted path appeared: side -1 = it comes from the left of the screen, 1 = the right, 0 = straight on (step 11: a panned flutter)
   BAT_HIT: 'bat:hit',               // { x, z }   the fruit bat touched the player: the combo dropped one step (no life, no pot loss)
   ITEM_SNATCHED: 'item:snatched',   // { type, x, z }   the bat snatched a mango (no score, no juice patch)
   BIGONE_SURVIVED: 'bigone:survived', // { x, z, bonus }   the player escaped The Big One's ring: +bonus into the pot

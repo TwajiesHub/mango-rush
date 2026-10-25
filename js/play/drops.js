@@ -400,7 +400,7 @@ function launch(type, x, z, warn, kind = 'normal', big = false) {
   else if (kind === 'late') { it.locked = false; it.lockAge = warn - C.late.lockBefore; setRingTell(it.id, { cPulse: C.late.pulse, lock: 0 }); }
   else if (kind === 'drifter') { it.locked = false; it.lockAge = warn - C.minLock; }
 
-  emit(EVENTS.DROP_SPAWN, { id: it.id, type, kind, x, z, warnTime: warn, fallAt: it.fallStart });
+  emit(EVENTS.DROP_SPAWN, { id: it.id, type, kind, x, z, warnTime: warn, fallAt: it.fallStart, big });
   return it;
 }
 

@@ -12,6 +12,10 @@
 // current fps cap, antialias on/off, the pixel ratio and the quality level (see renderer.js). It refreshes 4 times a second and ONLY
 // while the panel is open, so it costs nothing when closed.
 //
+// SOUND (step 11). A Sound section under the performance box (refreshed with it, only while the panel is open): music on/off (the same switch as the
+// game's), the context state, the music state and loop window, the current filter cutoff and playback rate, the beat and its phase, and the live and peak
+// number of sound-effect voices. The Y key (main.js) plays every new sound in turn.
+//
 // FAIRNESS. While any value really differs from the default (tuneIsChanged(), which ignores slider rounding), a tag
 // "TUNING · NOT RANKED" with a one-tap Reset is on screen, from the moment the page loads (so also from the very start of a
 // run when values were restored), and main.js does not save the run to the start.ng leaderboard. This holds on the beta too:
@@ -22,6 +26,7 @@
 
 import { TUNE, TUNE_DEFS, setTune, resetTune, tuneIsChanged, tuneChangedValues } from '../core/config.js';
 import { state } from '../core/state.js';
+import { setMusicEnabled } from '../audio/audio.js';
 
 const KEY = 'mango-rush:tune';
 const GAME_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'p', 'escape']);
@@ -30,6 +35,8 @@ let panel = null;
 let tab = null;
 let tag = null;
 let perfBox = null;
+let soundBox = null;
+let getSoundFn = null;
 let perfTimer = 0;
 let getPerfFn = null;
 const rows = new Map();   // key -> { input, out }
@@ -96,12 +103,27 @@ function paintPerf() {
   if (text !== lastPerfText) { lastPerfText = text; perfBox.textContent = text; }   // write only when it changed
 }
 
+let lastSoundText = '';
+function paintSound() {
+  if (!getSoundFn || !soundBox) return;
+  const a = getSoundFn();
+  const text = [
+    `audio ${a.ctx}   music ${a.music} (${a.musicOn ? 'on' : 'off'})   sfx ${a.sfxOn ? 'on' : 'off'}`,
+    `loop ${a.loop}   decoded ${a.duration ? a.duration.toFixed(4) + ' s' : '-'}`,
+    `cutoff ${Math.round(a.cutoff)} Hz   rate ${a.rate ? a.rate.toFixed(3) : '-'}   level ${a.db === 99 ? '-' : a.db.toFixed(1) + ' dB'}${a.dark ? '   (dark)' : ''}`,
+    `beat ${a.beat}   phase ${a.phase.toFixed(2)}`,
+    `voices ${a.voices}   peak ${a.peakVoices}`,
+    'Y plays every new sound in turn (press Play once first)',
+  ].join('\n');
+  if (text !== lastSoundText) { lastSoundText = text; soundBox.textContent = text; }
+}
+
 function toggle(open) {
   const show = open === undefined ? panel.hidden : open;
   panel.hidden = !show;
   tab.setAttribute('aria-expanded', String(show));
   clearInterval(perfTimer);
-  if (show && getPerfFn) { paintPerf(); perfTimer = setInterval(paintPerf, 250); }   // only while open
+  if (show && getPerfFn) { paintPerf(); paintSound(); perfTimer = setInterval(() => { paintPerf(); paintSound(); }, 250); }   // only while open
 }
 
 async function copyValues(btn) {
@@ -122,8 +144,9 @@ async function copyValues(btn) {
   setTimeout(() => { btn.textContent = old; }, 1400);
 }
 
-export function initTune({ getPerf } = {}) {
+export function initTune({ getPerf, getSound } = {}) {
   getPerfFn = getPerf || null;
+  getSoundFn = getSound || null;
   const style = document.createElement('style');
   style.textContent = `
     .tune-tab { position: fixed; right: 0; top: 46%; z-index: 30; min-width: 44px; min-height: 44px; padding: 6px 10px; border: var(--border); border-right: 0; border-radius: var(--radius) 0 0 var(--radius); background: var(--paper); color: var(--ink); font: 800 12px var(--font-body); letter-spacing: 0.14em; cursor: pointer; pointer-events: auto; }
@@ -174,6 +197,17 @@ export function initTune({ getPerf } = {}) {
   perfBox.className = 'perf';
   perfBox.setAttribute('aria-label', 'Performance');
   panel.appendChild(perfBox);
+  // the Sound section: a music switch and a live read-out
+  const soundHead = document.createElement('h3');
+  soundHead.textContent = 'Sound';
+  const musicBtn = document.createElement('button');
+  musicBtn.type = 'button';
+  musicBtn.textContent = 'Music on / off';
+  musicBtn.addEventListener('click', () => { setMusicEnabled(!state.settings.music); state.settings.music = !state.settings.music; paintSound(); musicBtn.blur(); });
+  soundBox = document.createElement('pre');
+  soundBox.className = 'perf';
+  soundBox.setAttribute('aria-label', 'Sound');
+  panel.append(soundHead, musicBtn, soundBox);
 
   let group = '';
   for (const d of TUNE_DEFS) {

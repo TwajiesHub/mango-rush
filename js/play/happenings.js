@@ -220,6 +220,7 @@ function updateBat(dt, t) {
       bat = makeBat(nb.angle, nb.offset, nb.t, false);
       batIdx++;
       placePathDots(true);
+      emit(EVENTS.BAT_TELL, { side: Math.abs(bat.dx) < 0.2 ? 0 : (bat.dx > 0 ? -1 : 1) });   // it enters from the opposite end of its direction (sound only)
       if (!batWarned) { batWarned = true; emit(EVENTS.HAPPENING_WARN, { id: 'bat', inSeconds: B.warn }); }   // the banner shows the first time only
     }
   }
@@ -445,5 +446,6 @@ export function sendBatNow() {
   if (!tl || bat) return false;
   bat = makeBat(Math.random(), Math.random(), state.time + B.warn, true);
   placePathDots(true);
+  emit(EVENTS.BAT_TELL, { side: Math.abs(bat.dx) < 0.2 ? 0 : (bat.dx > 0 ? -1 : 1) });
   return true;
 }

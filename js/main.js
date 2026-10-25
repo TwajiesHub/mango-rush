@@ -25,7 +25,7 @@ import { initHappenings, resetHappenings, updateHappenings, getHappeningDebug, s
 import { resetScoring, updateScoring, endRun, scoringSelfTest, debugFillMadness, debugLastLife, debugBestAbove } from './play/scoring.js';
 import { initJuice, timeScale, updateJuice, setPlayerObject, deathSeconds } from './fx/juice.js';
 import { updateAdrenaline, resetAdrenaline } from './fx/adrenaline.js';
-import { initAudio, unlockAudio, setMusicEnabled, setSfxEnabled, updateAudio } from './audio/audio.js';
+import { initAudio, unlockAudio, setMusicEnabled, setSfxEnabled, updateAudio, playConfirm, soundCheck, getAudioDebug } from './audio/audio.js';
 import { initHud, showHud, showTouchControls, updateHud, setPortrait, setJoystick, showBanner } from './ui/hud.js';
 import { initScreens, showLoading, showStart, showWarmupHint, showCountdown, showPause, showGameOver, showLeaderboard, hideScreens, showToast } from './ui/screens.js';
 import { createShareCard, shareScore } from './ui/sharecard.js';
@@ -58,7 +58,7 @@ async function boot() {
   // a known weak GPU (Intel) on a fast screen is capped to an even 60 fps from the start; others only if frames miss the refresh budget
   clock = createFrameClock({ forceCap: getGpuInfo().intel });
   initJuice({ scene, camera, popupRoot: $('popups-root') });
-  initAudio({ musicUrl: './assets/music/loop.mp3' });
+  initAudio({ musicUrl: `./${CONFIG.music.url}` });
   initInput($('scene'), { onPause: togglePause, canPlay: () => state.screen === 'play', onJoystick: setJoystick });
   initHud($('hud-root'), { onPause: togglePause, onDash: queueDash });
   initScreens($('screens-root'), {
@@ -307,6 +307,7 @@ async function share() {
     const r = await shareScore({ summary: lastSummary, blob, url: 'https://start.ng/games/mango-rush', dailyLabel: dailyLabel() });
     const say = { shared: TEXT.share.shared, downloaded: TEXT.share.saved, saved: TEXT.share.savedOnly, copied: TEXT.share.copied, failed: TEXT.share.failed };
     if (r !== 'cancelled') showToast(say[r] || TEXT.share.failed);
+    if (r === 'shared' || r === 'downloaded' || r === 'saved' || r === 'copied') playConfirm();   // a small confirm blip when it worked
   } catch (err) {
     console.warn('[mango-rush] share card failed', err);
     showToast(TEXT.share.failed);
@@ -403,7 +404,7 @@ let botModule = null;
 let botDriving = false;
 if (location.search.includes('debug')) {
   import('./play/bot.js').then((m) => { botModule = m; });
-  import('./ui/tune.js').then((m) => m.initTune({ getPerf }));   // the tuning panel: debug only, never downloaded by players
+  import('./ui/tune.js').then((m) => m.initTune({ getPerf, getSound: getAudioDebug }));   // the tuning panel: debug only, never downloaded by players
   window.__mango = {
     state,
     renderer: getRenderer,
@@ -463,6 +464,13 @@ if (location.search.includes('debug')) {
     runTuned = true;
     window.__tune?.refresh?.();
   });
+  // Y plays every new sound in turn (a sound check; press Play once first so the audio is unlocked). It marks the run "TUNING · NOT RANKED".
+  addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'y' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    soundCheck();
+    if (state.screen === 'play') { markUnranked(); runTuned = true; window.__tune?.refresh?.(); }
+  });
+  window.__mango.audio = getAudioDebug;
   // G opens the game over screen with sample data (each press: new best on/off, guest on/off); J opens the leaderboard with sample entries
   // (each press: you in the top 10, you outside it, loading, error, guest). Debug only; neither starts or changes a run.
   let gStep = 0;

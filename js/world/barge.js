@@ -31,7 +31,7 @@
 //
 // LIVING PLANKS (step 9, look only): the deck's top is a grid (0.5 unit cells) with the materials.deckTopMaterial shader. A landing coconut dips the planks
 //   within about 2 units a few cm and springs back over 0.3 s (The Big One: a bigger dip and a jolt of the whole deck), a footstep at speed dips them a hair,
-//   and from the night phase the plank seams glow faintly in a slow pulse (about 100 bpm). Nothing in the game reads the heights. Reduced motion: no dips,
+//   and from the night phase the plank seams glow faintly, pulsing on the music's beat (audio.musicBeat). Nothing in the game reads the heights. Reduced motion: no dips,
 //   no jolt, a steady faint glow.
 //
 // The water streaks and the foam are OPAQUE on purpose: three draws opaque things in renderOrder and transparent things
@@ -46,6 +46,7 @@ import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
 import { flat, toon, outline, blobShadow, mergeToonProps, deckTopMaterial, DECK, DECK_SLOTS, keepColorDuring } from './materials.js';
 import { EVENTS, on } from '../core/events.js';
+import { musicBeat } from '../audio/audio.js';
 import { wetFrac, smooth } from '../core/journeymath.js';
 
 const D = CONFIG.deck;
@@ -754,11 +755,13 @@ function updatePlanks(dt) {
     joltAge += dt;
     DECK.uJolt.value = joltAmp * Math.exp(-4 * joltAge) * Math.cos(14 * joltAge);
   } else if (DECK.uJolt.value !== 0) DECK.uJolt.value = 0;
-  // night seam glow: from the night phase on, a slow pulse (about 100 beats a minute). Steady and faint under reduced motion.
+  // night seam glow: from the night phase on, a pulse ON THE MUSIC'S BEAT (audio.musicBeat: the real groove; 105 BPM when the music is off).
+  // Steady and faint under reduced motion.
   const S = CONFIG.adrenaline.planks.seam;
   const night = state.screen === 'play' || state.screen === 'paused' || state.screen === 'dying' ? (journeyTime() >= CONFIG.phases.find((p) => p.id === 'night').t ? 1 : 0) : 0;
   seamLevel += (night - seamLevel) * (1 - Math.exp(-1.5 * dt));
-  const pulse = state.settings.reducedMotion ? S.steady : S.level * (0.55 + 0.45 * Math.sin(t * Math.PI * 2 * S.bpm / 60));
+  const bt = musicBeat();
+  const pulse = state.settings.reducedMotion ? S.steady : S.level * (0.35 + 0.65 * Math.exp(-bt.phase * 3.2));   // brightest on the beat, easing off before the next
   DECK.uGlow.value = seamLevel * (state.settings.reducedMotion ? S.steady : pulse);
 }
 

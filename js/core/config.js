@@ -273,15 +273,28 @@ export const CONFIG = Object.freeze({
       coconut: { amp: 0.07, radius: 2.0 },                                // a landing coconut: planks within ~2 units dip a few cm, 0.3 s
       big: { jolt: 0.16 },                                                // The Big One: the whole deck jolts
       step: { amp: 0.012, radius: 0.9, minSpeed: 3 },
-      seam: { bpm: 100, level: 0.34, steady: 0.2 },                       // night seam glow (a placeholder until the music drives it)
+      seam: { level: 0.34, steady: 0.2 },                                 // night seam glow: it pulses on the music's beat (audio.musicBeat; 105 BPM when the music is off)
     },
   },
+
+  // The music loop (assets/music/loop.mp3): exactly 24 bars at ~105 BPM, 54.862 s, blended so it loops seamlessly when decoded gaplessly (js/audio/loopwindow.js)
+  music: { url: 'assets/music/loop.mp3', bpm: 104.99, loopSeconds: 54.862, bars: 24 },
 
   audio: {
     catchPitchStep: 0.03,     // +3% per combo step
     detune: 0.025,
     duckOnHitDb: -8,
     duckMs: 200,
+    // adaptive music (step 11): per phase the lowpass cutoff (Hz) and the playback rate; all glide over glideSeconds
+    phases: { golden: [1800, 1.0], dusk: [4000, 1.02], night: [9000, 1.04], midnight: [16000, 1.06] },
+    glideSeconds: 2,
+    madnessCutoff: 18000, madnessDb: 2,
+    heartbeatCutoff: 700,
+    darkCutoff: 900,           // Lights out
+    duckCutoff: 900, duckDb: -12,   // pause and game over
+    startDb: -6,               // the start screen (golden-hour filter, -6 dB)
+    silenceDb: -24,            // the happening silence beat
+    maxVoices: 24,             // live sound-effect voices; beyond this only loud sounds may still start (up to maxVoices + 6)
   },
 
   quality: {
