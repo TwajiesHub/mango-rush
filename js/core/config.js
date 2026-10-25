@@ -59,7 +59,7 @@ export const CONFIG = Object.freeze({
     warnTime: 2,              // HAPPENING_WARN this many seconds before each scripted happening
     bridge: { t: 86, length: 10 },                 // Lights out: the bridge passes over the barge
     darkFade: 1, darkLevel: 0.25,                  // 1 s fade in / out; the scene keeps about this share of its light
-    gusts: [{ t: 120, length: 6 }, { t: 180, length: 6 }],
+    gusts: [{ t: 118, length: 6 }, { t: 180, length: 6 }],   // step 12: the first gust moved from 120 s to 118 s (the latest time in 100-118 that is 4 s clear of the shower and that >= 35% of the bot's 0.5 runs reach)
     gustStrength: 1.2, gustEase: 0.5, gustCone: 30,  // units / second; ease in and out; mostly sideways: within this many degrees of left or right
     bigone: { spawnAt: 207, warn: 3, holdFrom: 206, holdTo: 211, bonus: 500 },   // lands at 210 s; every other drop is held 206..211
     showers: [98, 152, 215], showerLength: 3, showerCount: 10, showerAfter: 0.5, showerWarn: 1.0,   // ~10 mangoes over 3 s, no coconut lands in it or the 0.5 s after
@@ -224,11 +224,11 @@ export const CONFIG = Object.freeze({
     pointsMultiplier: 2,
   },
 
-  medals: [                   // thresholds are placeholders until playtesting
-    { id: 'bronze', score: 5000 },
-    { id: 'silver', score: 15000 },
-    { id: 'gold', score: 30000 },
-    { id: 'diamond', score: 60000 },
+  medals: [                   // step 12: from the bot (40 runs each, seeds 1-40): bronze ~ the median at reaction 0.5, silver ~ its 90th percentile, gold ~ the median at 0.35, diamond ~ its 90th percentile
+    { id: 'bronze', score: 15500 },
+    { id: 'silver', score: 21500 },
+    { id: 'gold', score: 35500 },
+    { id: 'diamond', score: 43000 },
   ],
 
   waterOverDeck: { fromT: 60, toT: 210, minSafeFraction: 0.55 },

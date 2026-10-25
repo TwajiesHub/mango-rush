@@ -15,7 +15,7 @@
 //
 //   LIGHTS OUT (86..96 s): the bridge's scenery span passes over the barge (journey.js) and the light drops to about 25% with a 1 s fade each way
 //     (journey.darkAt); the warning rings (unlit shaders), the bank spots and the player (a cream outline and rim) stay readable.
-//   GUST (120 s, 180 s, 6 s): state.wind = windAt(): a push on FALLING items only (drops.js); the character's hair and scarf lean with it.
+//   GUST (118 s, 180 s, 6 s): state.wind = windAt(): a push on FALLING items only (drops.js); the character's hair and scarf lean with it.
 //   BAT (from 60 s, every 25-40 s): a straight path across the deck, dotted 1 s ahead, then a 0.8 s swoop. Touching it (and not dashing) drops the
 //     combo ONE step (scoring.batHit); it snatches mangoes and golden mangoes on its path (drops.snatchAt). The ambient journey bats are only scenery.
 //   THE BIG ONE (spawns at 207 s, lands at 210 s): drops.spawnBig at where the player stands at 207 s; every other drop is held 206..211 s.

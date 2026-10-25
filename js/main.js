@@ -541,7 +541,7 @@ if (location.search.includes('debug')) {
       gStep++;
       const sample = {
         mode: 'daily', score: 34240, timeSurvived: 192, reachedPhase: 'night', mangoes: 64, golden: 3, nearMisses: 7, perfectDodges: 2, bestMultiplier: 5,
-        medal: 'gold', nextMedal: { name: 'diamond', threshold: 60000 }, isBest, best: isBest ? 34240 : 36100, potLost: 2400, banks: 6, slams: 3, bestBank: 4200,
+        medal: 'gold', nextMedal: { name: 'diamond', threshold: 43000 }, isBest, best: isBest ? 34240 : 36100, potLost: 2400, banks: 6, slams: 3, bestBank: 4200,
         swoops: 12, bestChain: 4, potLostTotal: 2400,
       };
       lastSummary = sample;

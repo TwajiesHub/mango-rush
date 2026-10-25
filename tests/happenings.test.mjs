@@ -33,7 +33,7 @@ check('the same number whatever the numbers are', draws2 === draws);
 
 // ---- the scripted happenings, in order, never overlapping
 const s = a.scripted;
-check('the brief\'s times', s.some((x) => x.id === 'bridge' && x.start === 86 && x.end === 96) && s.filter((x) => x.id === 'gust').map((x) => x.start).join() === '120,180'
+check('the brief\'s times', s.some((x) => x.id === 'bridge' && x.start === 86 && x.end === 96) && s.filter((x) => x.id === 'gust').map((x) => x.start).join() === '118,180'
   && s.filter((x) => x.id === 'shower').map((x) => x.start).join() === '98,152,215' && s.some((x) => x.id === 'bigone' && x.start === 207));
 let overlap = false;
 for (let i = 1; i < s.length; i++) if (s[i].start < s[i - 1].end) overlap = true;
@@ -74,7 +74,7 @@ for (let t = 0; t < 260; t += 0.05) {
 }
 check('windAt is zero outside the gusts', outsideNonZero === 0);
 check('windAt is never above 1.2 and reaches it', maxW <= H.gustStrength + 1e-9 && maxW > H.gustStrength - 1e-6, String(maxW));
-windAt(a, 120.25, w);
+windAt(a, 118.25, w);
 check('it eases in over 0.5 s', Math.hypot(w.x, w.z) > 0 && Math.hypot(w.x, w.z) < H.gustStrength);
 let sideways = true;
 for (let seed = 1; seed <= 200; seed++) {
