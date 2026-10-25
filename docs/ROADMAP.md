@@ -15,8 +15,8 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
 | 6 | The journey | six parallax layers, six places + banners, golden hour → dusk → night → midnight light, moon + stars, lanterns, wet edges, birds/bats/fireflies/fireworks, score-version reset, N debug key | done |
 | 7 | Thrill pass A | compressed difficulty curve, lead-aimed coconuts, patterns (line, cage, sweep) at wave peaks, golden mango = double danger | done |
 | 8 | Happenings | Lights out (bridge), gusts, fruit bat, The Big One, mango showers (volleys already live since 5a); 8b review fixes | done |
-| 9 | Adrenaline + feel | heartbeat, Madness, best chase, bank/skill effects, living planks, freezes, shake, squash, particles, pop-ups | **CURRENT** |
-| 10 | The screens | start, HUD (pot chip), pause, game over (record near miss, lost pot, skills line, rival), leaderboard, share card — matched to the mockups | — |
+| 9 | Adrenaline + feel | heartbeat, Madness, best chase, bank/skill effects, living planks, freezes, shake, squash, particles, pop-ups; 9b storm cap | done |
+| 10 | The screens | start, HUD (pot chip), pause, game over (record near miss, lost pot, skills line, rival), leaderboard, share card — matched to the mockups | **CURRENT** |
 | 11 | Sound | afrobeat loop (adaptive) + all sound effects | — |
 | 12 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | — |
 | 13 | Release | merge `v1` into `main` (without `docs/`, `tests/`) → mango-rush.start.ng becomes version 1 | — |
