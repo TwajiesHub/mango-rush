@@ -567,7 +567,7 @@ function initTestPatch() {
   testPatch.mesh.visible = false;
   deck.add(testPatch.mesh);
   addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() !== 'g' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key.toLowerCase() !== 'g' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || state.screen !== 'play') return;   // (G also opens the sample game over screen outside a run)
     testPatch.on = !testPatch.on;
     testPatch.mesh.visible = testPatch.on;
   });

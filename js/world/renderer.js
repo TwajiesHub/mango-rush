@@ -354,10 +354,17 @@ function aim() {
   let phi = fit.phi;
   let ox = 0;
   let oz = 0;
+  let overE9 = 0;
   if (mode === 'over') {
     D *= C.over.farther;
     phi += C.over.higherDeg * DEG;
     ox = Math.sin(clock * 0.35) * C.over.drift;
+    // the poster card covers the right of a wide screen (or the lower part of a phone): the character is moved to the free side of the picture
+    // (a wide screen: about a fifth in from the left; a phone: near the top), by sliding the camera sideways / shifting the lens
+    const aspect = ctx.camera.aspect;
+    const dist = Math.hypot(D * Math.sin(phi), D * Math.cos(phi));
+    if (aspect > 1.1) ox += (follow ? follow.position.x : 0) - (C.over.stand[0] * dist * tanHalf * aspect);
+    else overE9 = C.over.standPhone;
   } else if (follow) {
     // the follow target leads the player a little (velocity x lookAhead), still inside the walkable area, so the
     // follow share and the deck fit hold; reduced motion switches the look-ahead off
@@ -376,7 +383,7 @@ function aim() {
   target.y = D * Math.sin(phi);
   target.z = D * Math.cos(phi) + oz;
   target.pitch = fit.pitch;
-  target.e9 = 0;
+  target.e9 = overE9;
 }
 
 const waterBase = new THREE.Color();
@@ -436,10 +443,9 @@ export function renderFrame(realDt) {
 // ---------------------------------------------------------------- portrait
 let portrait = null;
 
-export function makePortrait(characterObject) {
+export function makePortrait(characterObject, size = 128) {   // size: 128 for the HUD, a bigger one for the share card
   try {
     const { renderer } = ctx;
-    const size = 128;
     if (!portrait) {
       const scene = new THREE.Scene();
       scene.add(new THREE.HemisphereLight('#ffe2bd', '#8a6a4a', 1.6));
@@ -447,12 +453,19 @@ export function makePortrait(characterObject) {
       light.position.set(1.5, 2.5, 4);
       scene.add(light);
       const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
-      const rt = new THREE.WebGLRenderTarget(size, size);
-      rt.texture.colorSpace = THREE.SRGBColorSpace;
-      portrait = { scene, camera, target: rt, holder: new THREE.Group(), pixels: new Uint8Array(size * size * 4) };
+      portrait = { scene, camera, holder: new THREE.Group(), slots: new Map() };
       scene.add(portrait.holder);
     }
-    const { scene, camera, target: rt, holder, pixels } = portrait;
+    let slot = portrait.slots.get(size);
+    if (!slot) {
+      const target = new THREE.WebGLRenderTarget(size, size);
+      target.texture.colorSpace = THREE.SRGBColorSpace;
+      slot = { target, pixels: new Uint8Array(size * size * 4) };
+      portrait.slots.set(size, slot);
+    }
+    const { scene, camera, holder } = portrait;
+    const rt = slot.target;
+    const pixels = slot.pixels;
     const copy = characterObject.clone(true);   // shares geometry and materials with the original
     copy.position.set(0, 0, 0);
     copy.rotation.set(0, 0, 0);

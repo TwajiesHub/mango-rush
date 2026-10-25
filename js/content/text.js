@@ -14,10 +14,17 @@ const TEXT = {
 
   loading: {
     syncing: 'Syncing your look from start.ng…',           // max 40
+    tipLabel: 'Tip',
     tips: [                                                 // shown while loading; 6-10 tips, max 70 each
       'Dash out of a red ring at the last moment for a Perfect Dodge.',
       'Golden mangoes love landing next to coconuts.',
       'Hold x5 long enough and Mango Madness kicks in.',
+      'Dash into a crate to bank your pot before a coconut takes it.',
+      'Dash through a mango for a Swoop: +50% and a free dash.',
+      'A calabash shield blocks one coconut. Grab it.',
+      'Rotten mangoes cost you a combo step. Let them lie.',
+      'The Big One has a huge ring. Run early.',
+      'Wet planks at the edge are slippery after dusk.',
     ],
   },
 
@@ -36,7 +43,17 @@ const TEXT = {
     controlsDesktop: 'WASD move · Space dash · P pause',
     controlsTouch: 'Drag to move · tap Dash',
     signIn: 'Sign in with start.ng',                         // max 24
+    signInSave: 'Sign in to save your scores',               // max 32 (guests)
     leaderboard: 'Leaderboard',
+    player: 'Player',
+    look: 'Look',
+    hi: 'Hi, ',                                              // phone: "Hi, Bonnke"
+    guestName: 'Guest',
+    guestLook: 'Playing as guest',                           // max 24
+    scene: 'Golden hour · Lagos lagoon',                     // top right of the scene, desktop
+    playArrow: 'Play',
+    musicToggle: 'Music',
+    sfxToggle: 'Sound',
   },
 
   warmup: {
@@ -104,6 +121,8 @@ const TEXT = {
     dash: 'Dash',                         // while the dash is recharging (the pill fills up)
     dashKey: 'Space · Dash',
     lives: 'Lives',
+    shield: 'Shield',
+    places: ['Makoko', 'Bridge', 'City'],                    // under the time bar, left to right
   },
 
   pause: {
@@ -117,12 +136,22 @@ const TEXT = {
   },
 
   gameOver: {
-    headlines: {                                             // by the phase you reached; 3+ variants each, max 40
-      golden: ['The sun was still up.', 'Golden hour got you.', 'Early bath for this one.'],
-      dusk: ['Dusk caught you out.', 'So close to nightfall.', 'The bridge lights saw you fall.'],
-      night: ['You survived until nightfall.', 'Night owl.', 'The city lights cheered you on.'],
-      midnight: ['Midnight legend.', 'You saw the fireworks.', 'The lagoon bows to you.'],
+    kickerDaily: 'Daily run · {date}',
+    kickerFree: 'Free play · {date}',
+    headlines: {                                             // one per phase you reached, max 32
+      golden: 'You made it past Makoko.',
+      dusk: 'You survived until nightfall.',
+      night: 'You rode into the night.',
+      midnight: 'You reached midnight!',
     },
+    short: 'Only {n} short of your best',                     // within 10% of your best, not a new best
+    medalName: '{medal} medal',
+    comboShort: 'Combo',
+    nearShort: 'Near miss',
+    rival: '{name} is 1 place above · {score}',              // the entry one rank above you
+    top: "You're #1 on start.ng",
+    signInBoard: 'Sign in to get on the board',              // guests
+    keySpace: 'Space',
     newBest: 'New best',
     stats: { mangoes: 'Mangoes', bestCombo: 'Best combo', nearMisses: 'Near misses', survived: 'Survived' },
     lostInPot: 'Lost in the pot: {pot}',                     // only when above 0; plain words, no guilt
@@ -151,6 +180,11 @@ const TEXT = {
     empty: 'No runs yet. Be the first.',                     // max 32
     you: 'You',
     close: 'Close',
+    rank: 'Rank', player: 'Player',
+    error: "Couldn't load the board. Try again.",
+    retry: 'Try again',
+    signIn: 'Sign in to get on the board',
+    loading: 'Loading the board',
   },
 
   medals: { none: 'No medal yet', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', diamond: 'Diamond' },
@@ -160,7 +194,13 @@ const TEXT = {
     message: 'I scored {score} in Mango Rush 🥭 Can you beat it? {url}',
     dailyMessage: 'Daily Run {date}: {score} in Mango Rush 🥭 Same drops for everyone. {url}',
     copied: 'Copied to clipboard',
-    cardFooter: 'Mango Rush on start.ng',
+    saved: 'Card saved · link copied',
+    savedOnly: 'Card saved',
+    shared: 'Shared',
+    failed: "Couldn't make the share card. Try again.",
+    cardFooter: 'Play Mango Rush on start.ng',
+    cardMedal: '{medal} medal',
+    plain: 'I scored {score} on Mango Rush 🥭 {url}',
   },
 
   a11y: {

@@ -31,6 +31,11 @@
   --radius-card: 6px;
   --border: 2px solid var(--ink);
   --print-shadow: 6px 6px 0 var(--vermilion);
+  --card-shadow: 10px 10px 0 var(--vermilion);   /* the poster card's hard offset shadow */
+  --umber-shadow: 4px 4px 0 var(--ink);
+  --strip: repeating-linear-gradient(to bottom, var(--ink) 0 14px, transparent 14px 28px);        /* the woven strip on a vertical edge */
+  --strip-h: repeating-linear-gradient(to right, var(--ink) 0 14px, transparent 14px 28px);       /* ... and on a horizontal edge */
+  --muted: #4F3520;        /* secondary text on ochre: 5.3:1 */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   --t-fast: 140ms;

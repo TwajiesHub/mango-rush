@@ -27,12 +27,14 @@ import { initJuice, timeScale, updateJuice, setPlayerObject, deathSeconds } from
 import { updateAdrenaline, resetAdrenaline } from './fx/adrenaline.js';
 import { initAudio, unlockAudio, setMusicEnabled, setSfxEnabled, updateAudio } from './audio/audio.js';
 import { initHud, showHud, showTouchControls, updateHud, setPortrait, setJoystick, showBanner } from './ui/hud.js';
-import { initScreens, showLoading, showStart, showWarmupHint, showCountdown, showPause, showGameOver, showLeaderboard, hideScreens } from './ui/screens.js';
+import { initScreens, showLoading, showStart, showWarmupHint, showCountdown, showPause, showGameOver, showLeaderboard, hideScreens, showToast } from './ui/screens.js';
 import { createShareCard, shareScore } from './ui/sharecard.js';
 import TEXT from './content/text.js';
 
 const $ = (id) => document.getElementById(id);
 let portraitUrl = '';
+let renderedPortrait = '';   // a 384 px render of the character (neutral pose, taken at load): the share card uses it first
+let sharing = false;
 let lastSummary = null;
 let clock = null;       // frame pacing and a steady dt (core/frameclock.js)
 let runTuned = false;   // some tuning value differed from its default at any moment of this run: never ranked
@@ -103,6 +105,7 @@ async function loadPlayer() {
   syncSettings();
   setCharacter(info);
   setPlayerObject(getPlayer().object);
+  renderedPortrait = makePortrait(getPlayer().object, 384);
   portraitUrl = info.face || makePortrait(getPlayer().object);
   setPortrait(portraitUrl);
   emit(EVENTS.PLAYER_READY, info);
@@ -118,6 +121,7 @@ async function refreshPlayer() {
   state.player = info;
   setCharacter(info);
   setPlayerObject(getPlayer().object);
+  renderedPortrait = makePortrait(getPlayer().object, 384);
   portraitUrl = info.face || makePortrait(getPlayer().object);
   setPortrait(portraitUrl);
   emit(EVENTS.STYLE_CHANGE, info);
@@ -235,22 +239,44 @@ function finishRun() {
     if (runTuned) {
       // a run played with tuned values is never saved to the leaderboard (also on the beta)
       emit(EVENTS.LEADERBOARD_SAVED, { ok: false, error: 'tuned' });
-    } else saveScore({ score: summary.score, survived: Math.floor(summary.timeSurvived), mangoes: summary.mangoes }).then((saved) => {
+    } else saveScore({ score: summary.score, survived: Math.floor(summary.timeSurvived), mangoes: summary.mangoes }).then(async (saved) => {
       const r = saved?.ok && saved.result ? saved.result : null;
       lastRank = r?.rank ?? null;
-      emit(EVENTS.LEADERBOARD_SAVED, r ? { ok: true, rank: r.rank, best: r.best, improved: r.improved }
+      emit(EVENTS.LEADERBOARD_SAVED, r ? { ok: true, rank: r.rank, best: r.best, improved: r.improved, rival: null }
         : { ok: false, error: saved?.error || 'unreachable' });
+      if (r && r.rank > 1) {
+        // the rival: the entry one place above (from the top 50; outside them the rank alone shows). #1 needs no rival.
+        const rival = await findRival(r.rank);
+        if (rival) emit(EVENTS.LEADERBOARD_SAVED, { ok: true, rank: r.rank, best: r.best, improved: r.improved, rival });
+      }
     });
   }
 }
 
 let lastRank = null;
+
+// the entry one rank above `rank`, from the top 50 ({ name, score }), or null (outside the 50, offline, no entry)
+async function findRival(rank) {
+  try {
+    const data = await getLeaderboard(50);
+    if (!data?.ok) return null;
+    const above = (data.entries || []).filter((e) => e.rank < rank).sort((a, b) => b.rank - a.rank)[0];
+    return above ? { name: above.name, score: above.score } : null;
+  } catch { return null; }
+}
+
 async function openLeaderboard() {
-  showLeaderboard({ entries: [], myId: state.player.id, loading: true });
-  const data = await getLeaderboard(10);
+  const me = state.player.id;
+  const guest = !state.player.signedIn;
+  showLeaderboard({ entries: [], myId: me, loading: true, guest });
+  let data = null;
+  try { data = await getLeaderboard(50); } catch { data = null; }   // up to 50, to find the player's own row
   const entries = data?.ok ? data.entries || [] : [];
-  emit(EVENTS.LEADERBOARD_DATA, { ok: !!data?.ok, entries, myId: state.player.id });
-  showLeaderboard({ entries, myId: state.player.id, loading: false });
+  emit(EVENTS.LEADERBOARD_DATA, { ok: !!data?.ok, entries, myId: me });
+  showLeaderboard({
+    entries, myId: me, loading: false, error: !data?.ok, guest,
+    me: lastRank ? { rank: lastRank, score: state.best } : null,   // not among the fetched? their rank from the last save
+  });
 }
 
 function applySettings(settings) {
@@ -260,10 +286,21 @@ function applySettings(settings) {
   emit(EVENTS.SETTINGS_CHANGE, state.settings);
 }
 
+// SHARE CARD never fails silently: every outcome gets a short message
 async function share() {
-  if (!lastSummary) return;
-  const blob = await createShareCard({ summary: lastSummary, player: state.player, portraitUrl, dailyLabel: dailyLabel(), rank: lastRank });
-  await shareScore({ summary: lastSummary, blob, url: 'https://mango-rush.start.ng' });
+  if (!lastSummary || sharing) return;
+  sharing = true;
+  try {
+    const blob = await createShareCard({ summary: lastSummary, player: state.player, portraitUrl: renderedPortrait, faceUrl: state.player.face, dailyLabel: dailyLabel(), rank: lastRank });
+    const r = await shareScore({ summary: lastSummary, blob, url: 'https://mango-rush.start.ng', dailyLabel: dailyLabel() });
+    const say = { shared: TEXT.share.shared, downloaded: TEXT.share.saved, saved: TEXT.share.savedOnly, copied: TEXT.share.copied, failed: TEXT.share.failed };
+    if (r !== 'cancelled') showToast(say[r] || TEXT.share.failed);
+  } catch (err) {
+    console.warn('[mango-rush] share card failed', err);
+    showToast(TEXT.share.failed);
+  } finally {
+    sharing = false;
+  }
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -413,6 +450,43 @@ if (location.search.includes('debug')) {
     markUnranked();
     runTuned = true;
     window.__tune?.refresh?.();
+  });
+  // G opens the game over screen with sample data (each press: new best on/off, guest on/off); J opens the leaderboard with sample entries
+  // (each press: you in the top 10, you outside it, loading, error, guest). Debug only; neither starts or changes a run.
+  let gStep = 0;
+  let jStep = 0;
+  addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if ((k !== 'g' && k !== 'j') || e.repeat || e.ctrlKey || e.metaKey || e.altKey || state.screen === 'play' || state.screen === 'dying') return;
+    if (k === 'g') {
+      const isBest = gStep % 2 === 0;
+      const signedIn = gStep % 4 < 2;
+      gStep++;
+      const sample = {
+        mode: 'daily', score: 34240, timeSurvived: 192, reachedPhase: 'night', mangoes: 64, golden: 3, nearMisses: 7, perfectDodges: 2, bestMultiplier: 5,
+        medal: 'gold', nextMedal: { name: 'diamond', threshold: 60000 }, isBest, best: isBest ? 34240 : 36100, potLost: 2400, banks: 6, slams: 3, bestBank: 4200,
+        swoops: 12, bestChain: 4, potLostTotal: 2400,
+      };
+      lastSummary = sample;
+      setScreen('over');
+      showHud(false);
+      setOverPose(isBest);
+      setCameraMode('over');
+      showTouchControls(false);
+      showGameOver(sample, { player: { ...state.player, signedIn }, portraitUrl, dailyLabel: dailyLabel() });
+      if (signedIn) setTimeout(() => emit(EVENTS.LEADERBOARD_SAVED, { ok: true, rank: gStep % 8 < 4 ? 14 : 1, best: 34240, improved: isBest, rival: gStep % 8 < 4 ? { name: 'Tunde', score: 36100 } : null }), 700);
+    } else {
+      const me = state.player.id;
+      const mk = (n) => Array.from({ length: n }, (_, i) => ({ rank: i + 1, player_id: 1000 + i, name: ['Trini', 'Tunde', 'Amaka', 'Kofi', 'Zainab', 'Ife', 'Chidi', 'Lola', 'Seyi', 'Nneka', 'Bayo', 'Efe'][i % 12], color: ['#4b7bec', '#E4573D', '#1FA39A', '#F2A93B', '#8E3A4E'][i % 5], score: 62000 - i * 2150, stats: { survived: 228 - i * 3, mangoes: 140 - i * 2 } }));
+      const variants = [
+        () => { const e = mk(30); e[3] = { ...e[3], player_id: me, name: state.player.name || 'You' }; return { entries: e, myId: me }; },
+        () => { const e = mk(30); e[13] = { ...e[13], player_id: me, name: state.player.name || 'You' }; return { entries: e, myId: me }; },
+        () => ({ entries: [], myId: me, loading: true }),
+        () => ({ entries: [], myId: me, error: true }),
+        () => ({ entries: mk(10), myId: me, guest: true }),
+      ];
+      showLeaderboard(variants[jStep++ % variants.length]());
+    }
   });
   window.__mangoTest = { scoring: () => { const r = scoringSelfTest(); console[r.ok ? 'log' : 'error']('[scoring self-check]', r); return r; } };
 }

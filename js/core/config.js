@@ -112,7 +112,7 @@ export const CONFIG = Object.freeze({
     followShare: 0.15,        // the camera moves this share of the player's offset from the centre
     followZeta: 1,            // (the follow frequency is TUNE.camFollowFreq)
     poseFreq: 2.2,            // how fast the camera glides between menu / play / over poses
-    over: { farther: 1.12, higherDeg: 5, drift: 0.7 },
+    over: { farther: 1.12, higherDeg: 5, drift: 0.7, stand: [-0.62], standPhone: -1.34 },   // stand: where the character stands on a wide screen (ndc x), standPhone: the lens shift on a phone (the poster card fills the lower part)
     // the start-screen camera: position, tilt, where the horizon sits (share from the top) and where the character stands
     menu: {
       landscape: { pos: [-2.0, 2.4, 8.0], pitchDeg: 8, horizonFrac: 0.62, stand: [0, -3.2] },
