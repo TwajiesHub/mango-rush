@@ -1,0 +1,7 @@
+Music: "Afro Beat Instrumental Music" by Rediskasound (Pixabay, item 554537)
+Page: <https://pixabay.com/music/afrobeat-afro-beat-instrumental-music-554537/>
+Licence: Pixabay Content License (free to use in games; no attribution required, credited here anyway).
+
+loop.mp3 is an edited excerpt: 24 bars (54.862 s) taken from 0:44.339 of the original, at about 105 BPM.
+The last 50 ms are blended with the audio just before the excerpt's start so the loop is seamless.
+Loudness normalised to about -18 LUFS, MP3 128 kbps stereo 44.1 kHz (LAME header for gapless decoding).
