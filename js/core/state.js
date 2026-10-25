@@ -5,6 +5,7 @@
 
 export const state = {
   // owner: main.js
+  quality: { level: 0, low: false, stormCap: 6 },   // the renderer's quality level (world/renderer.js): low = the pause is a plain dim; stormCap = how many Madness storm mangoes at once
   screen: 'loading',          // 'loading'|'start'|'warmup'|'countdown'|'play'|'paused'|'dying'|'over'   (warmup: the first run's teaching minute; countdown: 3-2-1-GO, the run clock starts at GO)
   mode: 'free',               // 'free'|'daily'
   time: 0,                    // seconds since the run started (stops while paused)

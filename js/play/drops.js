@@ -300,6 +300,13 @@ function acquire(type) {
   return free[type].pop() || makeSlot(type);
 }
 
+// Remove items[i] KEEPING THE ORDER (no swap-remove): items stay in spawn order (ids only grow), so two coconuts that land in the same frame are
+// always processed in spawn order (tie-break by id). Nothing a player earns (a Madness storm mango, a catch) can reorder the Daily Run's landings.
+function removeAt(i) {
+  for (let j = i; j < items.length - 1; j++) items[j] = items[j + 1];
+  items.length--;
+}
+
 function release(it) {
   it.mesh.visible = false;
   it.marker.visible = false;
@@ -351,6 +358,7 @@ function launch(type, x, z, warn, kind = 'normal', big = false) {
   it.big = big;
   it.windTrail = false;
   it.storm = false;
+  it.fade = 0;
   it.ground = big ? BIG_GROUND : GROUND[type];
   const ground = it.ground;
   it.id = nextId++;
@@ -438,8 +446,7 @@ export function snatchAt(x, z, r) {
     if ((it.type !== 'mango' && it.type !== 'golden') || Math.hypot(it.x - x, it.z - z) > r) continue;
     emit(EVENTS.ITEM_SNATCHED, { type: it.type, x: it.x, z: it.z });
     release(it);
-    items[i] = items[items.length - 1];
-    items.pop();
+    removeAt(i);
     n++;
   }
   return n;
@@ -759,6 +766,19 @@ export function resetDrops(r) {
   for (const k of Object.keys(seen)) seen[k] = false;
 }
 
+/** Step 12: at game over the drops in the air fade out softly (over 0.6 s of REAL time) instead of hanging frozen through the slow motion. */
+export function fadeOutDrops(realDt) {
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.fade >= 1) continue;
+    it.fade = Math.min(1, it.fade + realDt / 0.6);
+    const base = it.big ? ITEM_SCALE * BIG_SCALE : ITEM_SCALE;
+    it.mesh.scale.setScalar(Math.max(0.001, base * (1 - it.fade)));
+    it.ringMat.uniforms.uOpacity.value = 0.45 * (1 - it.fade);
+    if (it.fade >= 1) { it.mesh.visible = false; it.marker.visible = false; it.shadow.visible = false; }
+  }
+}
+
 /** Step 12: the first-run warm-up. Turns the drop SCHEDULE off (no rng is touched: the run's own rng is created at GO) and clears the deck; forceDrop still works. resetDrops(rng) turns the schedule back on. */
 export function suspendSchedule() {
   rng = null;
@@ -802,8 +822,7 @@ function catchIt(it, i) {
   // a catch made while dashing is a Swoop; one made standing on the golden plank pays x2 (scoring.js does the sums)
   fruitCaught({ type: it.type, x: it.x, y, z: it.z, dashing: pl.dashing, onPlank: onPlank(pl.x, pl.z) });
   release(it);
-  items[i] = items[items.length - 1];
-  items.pop();
+  removeAt(i);
 }
 
 function lockRing(it) {
@@ -871,7 +890,7 @@ export function updateDrops(dt) {
   }
   const pl = getPlayer();
 
-  for (let i = items.length - 1; i >= 0; i--) {
+  for (let i = 0; i < items.length; i++) {   // in spawn order (see removeAt); a removal steps i back
     const it = items[i];
     const fruit = it.type !== 'coconut';
     const ground = it.ground;
@@ -947,7 +966,7 @@ export function updateDrops(dt) {
       it.shadowMat.opacity = 0.35 + 0.65 * progress;
 
       const dist = Math.hypot(it.x - pl.x, it.z - pl.z);
-      if (fruit && dist < CONFIG.catchRadius && it.mesh.position.y < CONFIG.catchMaxHeight) { catchIt(it, i); continue; }
+      if (fruit && dist < CONFIG.catchRadius && it.mesh.position.y < CONFIG.catchMaxHeight) { catchIt(it, i); i--; continue; }
       if (it.age >= it.warn) {
         it.landed = true;
         it.mesh.position.y = ground;
@@ -972,7 +991,7 @@ export function updateDrops(dt) {
       it.life -= dt;
       const dist = Math.hypot(it.x - pl.x, it.z - pl.z);
       if (fruit) {
-        if (dist < CONFIG.catchRadius - 0.1) { catchIt(it, i); continue; }
+        if (dist < CONFIG.catchRadius - 0.1) { catchIt(it, i); i--; continue; }
         if (it.storm) {   // a storm mango does not rot: it shrinks away over its last fadeOut seconds
           const k = Math.min(1, Math.max(0, it.life) / CONFIG.adrenaline.madness.fadeOut);
           it.mesh.scale.setScalar(ITEM_SCALE * k);
@@ -991,8 +1010,8 @@ export function updateDrops(dt) {
         // a missed mango that has rotted away leaves a slippery juice patch on its spot
         if (fruit && !it.storm && (it.type === 'mango' || it.type === 'golden')) addJuicePatch(it.x, it.z);
         release(it);
-        items[i] = items[items.length - 1];
-        items.pop();
+        removeAt(i);
+        i--;
       }
     }
   }

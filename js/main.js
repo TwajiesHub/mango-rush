@@ -20,7 +20,7 @@ import { createFrameClock } from './core/frameclock.js';
 import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation, juicePatches, wetBandFrac } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney, getJourneyDebug } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose, startTumble, updateTumble, endTumble } from './play/player.js';
-import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop, suspendSchedule } from './play/drops.js';
+import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop, suspendSchedule, fadeOutDrops } from './play/drops.js';
 import { initBank, resetBank, updateBank, bankSpots, highlightNearestBank } from './play/bank.js';
 import { startWarmup, updateWarmup, skipWarmup, warmupActive, cancelWarmup } from './play/warmup.js';
 import { initPlank, updatePlank, getPlankDebug } from './play/plank.js';
@@ -410,6 +410,7 @@ function frame(ts) {
   } else if (state.screen === 'dying') {
     // the game over transition: the clock is the real one; the world moves at the juice time scale (frozen, then 20%)
     updateTumble(timeScale() > 0 ? realDt : 0);
+    fadeOutDrops(realDt);   // the drops in the air fade out softly instead of hanging frozen
     dyingLeft -= realDt;
     if (dyingLeft <= 0) finishRun();
   } else if (state.screen !== 'paused') { idlePlayer(realDt, state.screen);

@@ -403,7 +403,7 @@ function updateStorm(t) {
     madIdx++;
     if (t >= BO.holdFrom && t < BO.holdTo) continue;
     if (coconutRingAt(p.x, p.z)) continue;
-    if (stormLive() >= CONFIG.adrenaline.madness.maxLive) continue;   // at most 6 storm mangoes at once
+    if (stormLive() >= state.quality.stormCap) continue;   // at most 6 storm mangoes at once (4 at the lowest quality level)
     stormDrop(p.x, p.z, CONFIG.adrenaline.madness.warn);
   }
 }

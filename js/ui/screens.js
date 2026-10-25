@@ -249,7 +249,7 @@ export function initScreens(root, a) {
 
     <div class="hint" role="status" hidden></div>
     <button class="btn btn--small skip-warmup" type="button" data-act="skip-warmup" hidden>${$esc(TEXT.warmup.skip)}</button>
-    <div class="countdown" aria-live="assertive" hidden></div>
+    <div class="countdown" aria-live="polite" hidden></div>
     <div class="toast" role="status" aria-live="polite" hidden></div>`;
 
   const q = (s) => root.querySelector(s);
@@ -497,7 +497,8 @@ function countUp(o, target, token) {
     el.textContent = num(Math.round(target * e));
     if (u < 1) countTimer = requestAnimationFrame(step);
     else {
-      o.querySelector('.over__final').textContent = `${num(target)}`;   // announced once, when it has landed
+      const medal = o.querySelector('.over__medalname').textContent;
+      o.querySelector('.over__final').textContent = `${num(target)}. ${medal}.`;   // the score and the medal, announced once, when the count has landed
       o.classList.add('is-slam');                                        // the NEW BEST stamp slams on (a plain fade with reduced motion)
     }
   };

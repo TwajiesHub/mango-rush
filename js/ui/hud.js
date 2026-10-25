@@ -181,10 +181,12 @@ export function initHud(r, a) {
     el.hearts.forEach((h, i) => {
       const lost = i >= e.lives;
       h.classList.toggle('is-lost', lost);
+      h.setAttribute('aria-label', lost ? TEXT.a11y.lifeLost : TEXT.a11y.life);   // a screen reader hears which lives are left
       if (lost) pulse(h, 'is-pop');   // the lost mango pops and goes dashed
     });
   });
   on(EVENTS.HIT, (e) => {
+    if (state.settings.reducedMotion) return;   // reduced motion: no flash at all
     el.flash.classList.toggle('is-white', !!e.shielded);
     el.flash.classList.add('is-on');
     setTimeout(() => el.flash.classList.remove('is-on'), 60);
@@ -379,7 +381,7 @@ export function updateHud() {
   }
   if (s.lives !== last.lives) {
     last.lives = s.lives;
-    el.hearts.forEach((h, i) => h.classList.toggle('is-lost', i >= s.lives));
+    el.hearts.forEach((h, i) => { h.classList.toggle('is-lost', i >= s.lives); h.setAttribute('aria-label', i >= s.lives ? TEXT.a11y.lifeLost : TEXT.a11y.life); });
   }
   if (s.multiplier !== last.mult) { last.mult = s.multiplier; el.x.textContent = `×${s.multiplier}`; }
   if (s.comboStep !== last.step) {

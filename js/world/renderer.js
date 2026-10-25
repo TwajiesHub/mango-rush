@@ -25,6 +25,14 @@
 //
 // MENU CAMERA. Low, looking almost level: the REAL horizon is on screen. A lens shift (projection matrix element [9])
 // puts it at the menu's horizonFrac, and journey.js finds it by projecting far points on the water plane.
+// QUALITY LEVELS (the quality manager steps down when the average frame time is over ~20 ms, back up after 5 s of headroom; step 12 added 4 and 5):
+//   0  pixel ratio min(devicePixelRatio, 1.5), full particles, full scenery           (a good phone or any laptop)
+//   1  pixel ratio 1.25
+//   2  pixel ratio 1.0
+//   3  pixel ratio 1.0, particles x0.5, thinner scenery; LOW QUALITY: the pause screen is a plain dim (no backdrop blur)
+//   4  pixel ratio 0.85, particles x0.35, state.quality.stormCap 4 (Mango Madness rains at most 4 storm mangoes at once instead of 6); also low quality
+//   (levels 3 and 4 set body.is-lowq; state.quality = { level, low, stormCap } is the shared read-only record of it)
+//
 // OVER CAMERA. The play pose, a little higher and further back, drifting slowly.
 // Moving between modes is a spring glide on position, tilt and lens shift. Camera shake from juice.cameraShake()
 // (x, y, roll) applies in every mode. No real-time shadow maps. Pixel ratio is capped (CONFIG.quality).
@@ -132,8 +140,9 @@ function buildLevels() {
   const base = basePixelRatio();
   const prs = [base];
   for (const p of [1.25, 1.0]) if (p < prs[prs.length - 1] - 0.01) prs.push(p);
-  levels = prs.map((pr) => ({ pr, particles: 1 }));
-  levels.push({ pr: prs[prs.length - 1], particles: 0.5 });
+  levels = prs.map((pr) => ({ pr, particles: 1, low: false, stormCap: CONFIG.adrenaline.madness.maxLive }));
+  levels.push({ pr: prs[prs.length - 1], particles: 0.5, low: true, stormCap: CONFIG.adrenaline.madness.maxLive });
+  levels.push({ pr: Math.max(0.75, prs[prs.length - 1] - 0.15), particles: 0.35, low: true, stormCap: CONFIG.adrenaline.madness.lowQualityCap });
 }
 
 function applyLevel(n, now) {
@@ -144,6 +153,10 @@ function applyLevel(n, now) {
   setParticleScale(levels[n].particles);
   setJourneyDetail(n);              // lower levels thin out the far layer and the ambient life
   setGrainPixelRatio(pixelRatio);   // the paper grain keeps its size ON SCREEN at every quality level
+  state.quality.level = n;
+  state.quality.low = levels[n].low;
+  state.quality.stormCap = levels[n].stormCap;
+  document.body.classList.toggle('is-lowq', levels[n].low);   // the pause screen is a plain dim on low quality (a backdrop blur is costly on weak phones)
   Q.winStart = now;
   Q.winSum = Q.winN = 0;
   Q.okFor = 0;

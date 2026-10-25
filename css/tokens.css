@@ -10,6 +10,8 @@
   --ink: #2B1A10;          /* burnt umber: text, outlines, dark chips */
   --vermilion: #E4573D;    /* sky, print-offset shadow */
   --vermilion-dark: #C8432E; /* danger, NEW BEST stamp */
+  --vermilion-deep: #B23A27; /* danger banners: cream text on it is 5.3:1 (the lighter vermilion-dark was 4.4:1) */
+  --stamp-ink: #7F2112;    /* the NEW BEST stamp's text on ochre: 4.6:1 */
   --saffron: #F2A93B;      /* sun, mangoes, accents, primary button text */
   --gold: #FFD84D;         /* golden mango, madness */
   --teal: #1FA39A;         /* water */

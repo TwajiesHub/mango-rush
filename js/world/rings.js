@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 
-export const RING_OUTER = { mango: 0.70, golden: 0.84, coconut: 0.72, rotten: 0.70, shield: 0.84, bank: 0.86 };
+export const RING_OUTER = { mango: 0.70, golden: 0.84, coconut: 0.72, rotten: 0.70, shield: 0.90, bank: 0.86 };
 
 export function tickRings(dt) {
   RING_TIME.value += dt;
@@ -89,7 +89,7 @@ vec4 ringAt(vec2 p) {
     acc = uColor * (c1 + c2) + uDark * dark;
     tot = c1 + c2 + dark;
     a = min(1.0, tot);
-  } else {
+  } else if (uKind < 3.5) {
     // BANK SPOT: a glowing saffron ring of dots on a soft disc of light. It makes its own light (unlit), so it reads the same by day and
     // at night.
     float glow = (1.0 - smoothstep(0.0, 1.0, r)) * 0.5;
@@ -107,6 +107,23 @@ vec4 ringAt(vec2 p) {
     a = max(min(1.0, tot), glow);
     acc = acc + uColor * glow * (1.0 - min(1.0, tot));
     tot = max(tot, 0.0001) + glow * (1.0 - min(1.0, tot));
+  } else if (uKind < 4.5) {
+    // ROTTEN (step 12, colour-blind safe): FEW, BIG, evenly spaced brown dots round a SOLID dark disc, nothing like the busy mango ring
+    float c1 = cover(dots(p, 0.70, floor(9.0 * uSpacing + 0.5), 0.092 * s));
+    float c2 = cover(r - 0.22 * s);
+    acc = uColor * c1 + uDark * c2;
+    tot = c1 + c2;
+    a = min(1.0, tot);
+  } else {
+    // SHIELD (step 12, colour-blind safe): a gold DIAMOND outline (a solid line, not dots) with a dot in each corner and one in the middle
+    float dia = abs(abs(p.x) + abs(p.y) - 0.80);
+    float c1 = cover(dia - 0.05 * s) * step(abs(p.x) + abs(p.y), 0.90);   // (the outline)
+    float cs = cover(min(min(length(p - vec2(0.80, 0.0)), length(p + vec2(0.80, 0.0))), min(length(p - vec2(0.0, 0.80)), length(p + vec2(0.0, 0.80)))) - 0.11 * s);
+    float c3 = cover(r - 0.10 * s);
+    float c4 = cover(dots(p, 0.86, 28.0, 0.034 * s));   // a faint dotted rim, so the ring still shows how far the catch reaches
+    acc = uColor * (c1 + cs + c4) + uColor2 * c3;
+    tot = c1 + cs + c3 + c4;
+    a = min(1.0, tot);
   }
   return vec4(acc / max(tot, 0.0001), a);
 }
@@ -130,7 +147,7 @@ void main() {
 
 export const ringGeo = new THREE.PlaneGeometry(2, 2);
 ringGeo.userData.shared = true;
-const RING_KIND = { mango: 0, golden: 1, coconut: 2, rotten: 0, shield: 1, bank: 3 };
+const RING_KIND = { mango: 0, golden: 1, coconut: 2, bank: 3, rotten: 4, shield: 5 };   // every kind has its own SHAPE (not only a colour): mango dots + inner ring, golden glow, coconut cross, bank glow disc, rotten sparse dots + a solid disc, shield diamond
 const RING_COLORS = {
   mango: ['#F2A93B', '#FFF1D6'], golden: ['#FFD84D', '#FFF1D6'], coconut: ['#C8432E', '#FFF1D6'],
   rotten: ['#9A7A45', '#FFF1D6'], shield: ['#FFD84D', '#FFF1D6'], bank: ['#FFB62E', '#FFF1D6'],
