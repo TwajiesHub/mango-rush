@@ -264,6 +264,8 @@ export const CONFIG = Object.freeze({
     madness: {
       tableSeed: 0x51ed270b, tableSeconds: 20, spots: 40,                 // 2 a second, enough for a Madness stretched by catches
       warn: 1.2,              // the ring time of a storm mango
+      maxLive: 6,             // at most this many storm mangoes at once (falling or waiting to be caught); a spot over the cap is skipped
+      landedLife: 2.5, fadeOut: 0.6,   // an uncaught storm mango waits this long, shrinks away over the last fadeOut seconds, and leaves NO juice patch
       push: 0.08, pushEase: 0.5, endFade: 0.6,
       lightTint: '#FFE9A8', lightTintAmt: 0.5, glowColor: '#FFD84D',
     },

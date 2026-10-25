@@ -19,7 +19,7 @@
 //   BAT (from 60 s, every 25-40 s): a straight path across the deck, dotted 1 s ahead, then a 0.8 s swoop. Touching it (and not dashing) drops the
 //     combo ONE step (scoring.batHit); it snatches mangoes and golden mangoes on its path (drops.snatchAt). The ambient journey bats are only scenery.
 //   THE BIG ONE (spawns at 207 s, lands at 210 s): drops.spawnBig at where the player stands at 207 s; every other drop is held 206..211 s.
-//   MANGO MADNESS STORM (step 9): while state.madnessActive, about 2 extra mangoes a second by forceDrop from the Madness table (play/madness.js), drawn at
+//   MANGO MADNESS STORM (step 9): while state.madnessActive, about 2 extra mangoes a second (drops.stormDrop, at most CONFIG.adrenaline.madness.maxLive = 6 at once; an uncaught one shrinks away after landedLife seconds with no juice patch, and never moves a scheduled drop) from the Madness table (play/madness.js), drawn at
 //     reset from its OWN rng (resetHappenings(rng, madnessRng): seed ^ CONFIG.adrenaline.madness.tableSeed; never the drops or happenings rng). The table is read
 //     from the moment Madness starts and stops when it ends; a spot under a falling coconut's ring is skipped (drops.coconutRingAt). The Daily Run is identical.
 //   SHOWERS (98 s, 152 s, 215 s, 3 s): about 10 mangoes by forceDrop at spots drawn at reset (kept apart by minSeparation); no coconut lands in them.
@@ -32,7 +32,7 @@ import { buildTimeline, windAt, upcoming, nextBat, activeAt } from './timeline.j
 import { buildMadnessTable, resolveMadnessSpots } from './madness.js';
 import { getPlayer } from './player.js';
 import { deckBounds } from '../world/barge.js';
-import { forceDrop, spawnBig, snatchAt, setTimeline, coconutRingAt } from './drops.js';
+import { forceDrop, spawnBig, snatchAt, setTimeline, coconutRingAt, stormDrop, stormLive } from './drops.js';
 import { batHit } from './scoring.js';
 import { flat, keepColorDuring } from '../world/materials.js';
 import { setShowerBranches } from '../world/journey.js';
@@ -402,7 +402,8 @@ function updateStorm(t) {
     madIdx++;
     if (t >= BO.holdFrom && t < BO.holdTo) continue;
     if (coconutRingAt(p.x, p.z)) continue;
-    forceDrop('mango', p.x, p.z, CONFIG.adrenaline.madness.warn);
+    if (stormLive() >= CONFIG.adrenaline.madness.maxLive) continue;   // at most 6 storm mangoes at once
+    stormDrop(p.x, p.z, CONFIG.adrenaline.madness.warn);
   }
 }
 

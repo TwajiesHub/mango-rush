@@ -350,6 +350,7 @@ function launch(type, x, z, warn, kind = 'normal', big = false) {
   const it = acquire(type);
   it.big = big;
   it.windTrail = false;
+  it.storm = false;
   it.ground = big ? BIG_GROUND : GROUND[type];
   const ground = it.ground;
   it.id = nextId++;
@@ -454,6 +455,20 @@ export function coconutRingAt(x, z, margin = 0.5) {
   return false;
 }
 
+/** How many Madness storm mangoes are out now (falling, or landed and waiting to be caught). */
+export function stormLive() {
+  let n = 0;
+  for (let i = 0; i < items.length; i++) if (items[i].storm) n++;
+  return n;
+}
+
+/** One Madness storm mango. It is marked, so it never moves a scheduled drop, fades away uncaught and leaves no juice patch. */
+export function stormDrop(x, z, warn) {
+  if (!scene) return;
+  const it = launch('mango', x, z, warn, 'normal');
+  it.storm = true;
+}
+
 export function forceDrop(type, x, z, warn, kind = 'normal') {
   if (!scene || !free[type]) return;
   const w = warn ?? (kind === 'normal' ? 1.2 : warnFor(kind, 1.2));
@@ -484,6 +499,7 @@ function separate(pos) {
   for (let tries = 0; tries < 7; tries++) {
     let clash = false;
     for (const it of items) {
+      if (it.storm) continue;   // the Madness storm never moves a scheduled drop (nothing a player earns may change the Daily Run)
       if (!it.landed && Math.hypot(it.x - pos.x, it.z - pos.z) < D.minSeparation) { clash = true; break; }
     }
     if (!clash) return;
@@ -930,7 +946,7 @@ export function updateDrops(dt) {
         it.mesh.rotation.set(0, it.mesh.rotation.y, 0);
         it.marker.visible = false;
         if (fruit) {
-          it.life = CONFIG.landedFruitLife;
+          it.life = it.storm ? CONFIG.adrenaline.madness.landedLife : CONFIG.landedFruitLife;
         } else {
           it.life = D.coconutLinger;
           burst({ x: it.x, y: 0.1, z: it.z }, '#c9a26b', 10, 3);
@@ -949,17 +965,23 @@ export function updateDrops(dt) {
       const dist = Math.hypot(it.x - pl.x, it.z - pl.z);
       if (fruit) {
         if (dist < CONFIG.catchRadius - 0.1) { catchIt(it, i); continue; }
+        if (it.storm) {   // a storm mango does not rot: it shrinks away over its last fadeOut seconds
+          const k = Math.min(1, Math.max(0, it.life) / CONFIG.adrenaline.madness.fadeOut);
+          it.mesh.scale.setScalar(ITEM_SCALE * k);
+          it.mesh.rotation.y += dt * 1.5;
+        } else {
         // landed mangoes blink, then rot (browner) until they vanish
         const rot = 1 - Math.max(0, it.life) / CONFIG.landedFruitLife;
         if (it.type === 'mango' || it.type === 'golden') it.bodyMat.color.lerpColors(WHITE, ROT_TINT, rot * rot);
         it.mesh.visible = it.life > CONFIG.landedBlink || Math.floor(it.life * 8) % 2 === 0;
         it.mesh.rotation.y += dt * 1.5;
+        }
       } else if (it.life < 0.4) {
         it.mesh.position.y -= dt * 1.5;   // sink into the grass
       }
       if (it.life <= 0) {
         // a missed mango that has rotted away leaves a slippery juice patch on its spot
-        if (fruit && (it.type === 'mango' || it.type === 'golden')) addJuicePatch(it.x, it.z);
+        if (fruit && !it.storm && (it.type === 'mango' || it.type === 'golden')) addJuicePatch(it.x, it.z);
         release(it);
         items[i] = items[items.length - 1];
         items.pop();
