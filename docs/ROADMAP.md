@@ -17,8 +17,8 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
 | 8 | Happenings | Lights out (bridge), gusts, fruit bat, The Big One, mango showers (volleys already live since 5a); 8b review fixes | done |
 | 9 | Adrenaline + feel | heartbeat, Madness, best chase, bank/skill effects, living planks, freezes, shake, squash, particles, pop-ups; 9b storm cap | done |
 | 10 | The screens | start, HUD (pot chip), pause, game over (record near miss, lost pot, skills line, rival), leaderboard, share card — matched to the mockups; 10b start.ng standards (share on X, back link) | done |
-| 11 | Sound | afrobeat loop (adaptive) + all sound effects | **CURRENT** |
-| 12 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | — |
+| 11 | Sound | afrobeat loop (adaptive) + all sound effects | done |
+| 12 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | **CURRENT** |
 | 13 | Release | merge `v1` into `main` (without `docs/`, `tests/`) → mango-rush.start.ng becomes version 1 | — |
 
 ## Step 0 — owner setup (no Claude Code needed)
