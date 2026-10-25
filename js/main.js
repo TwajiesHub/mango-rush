@@ -15,12 +15,13 @@ import { createRng, dailySeed, dailyLabel, randomSeed } from './core/rng.js';
 import { initStore, loadProgress, recordRun, loadSettings, saveSettings, bankHintDone, setBankDone, bankHintShown, setBankHintShown } from './core/store.js';
 import { initInput, readInput, takeDash, queueDash, isTouch } from './core/input.js';
 import { getPlayer as fetchStartngPlayer, styleKey, saveScore, getLeaderboard, signInUrl } from './startng.js';
-import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, warmUp, getCameraDebug, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
+import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait, isPortraitScreen, getRenderer, getScene, warmUp, getCameraDebug, menuStand, getGpuInfo, getQualityInfo, reportFrame } from './world/renderer.js';
 import { createFrameClock } from './core/frameclock.js';
 import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation, juicePatches, wetBandFrac } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney, getJourneyDebug } from './world/journey.js';
 import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose, startTumble, updateTumble, endTumble } from './play/player.js';
-import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop, suspendSchedule, fadeOutDrops } from './play/drops.js';
+import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, getDrops, forceDrop, suspendSchedule, fadeOutDrops } from './play/drops.js';
+import { setGrainPixelRatio } from './world/materials.js';
 import { initBank, resetBank, updateBank, bankSpots, highlightNearestBank } from './play/bank.js';
 import { startWarmup, updateWarmup, skipWarmup, warmupActive, cancelWarmup } from './play/warmup.js';
 import { initPlank, updatePlank, getPlankDebug } from './play/plank.js';
@@ -567,6 +568,14 @@ if (location.search.includes('debug')) {
     }
   });
   window.__mangoTest = { scoring: () => { const r = scoringSelfTest(); console[r.ok ? 'log' : 'error']('[scoring self-check]', r); return r; } };
+}
+
+// ?debug&cover: the cover shot (ui/cover.js, never downloaded by players): run  await window.__mango.cover()  in the console
+if (location.search.includes('cover')) {
+  import('./ui/cover.js').then((m) => m.initCover({
+    state, getRenderer, getScene, getPlayer, setCharacter, setOrientation, resetJourney, clearDrops, setCameraMode, setGrainPixelRatio, menuStand,
+    forceDrop, getDrops, updateJourney, updateBarge, renderFrame,
+  }));
 }
 
 boot().catch((err) => {

@@ -36,6 +36,11 @@ import * as THREE from 'three';
 // ---------------------------------------------------------------- paper grain
 const GRAIN = { value: 1 };            // the pixel ratio, shared by every grain shader
 const GRAIN_STRENGTH = 0.14;           // peak to peak
+const GRAIN_AMP = { value: 1 };        // a multiplier on the grain: 1 normally, less for the ?cover shot (a grainy picture compresses badly)
+/** 1 = the normal paper grain, 0 = none (js/ui/cover.js uses a low value so cover.png stays small). */
+export function setGrainAmount(a) {
+  GRAIN_AMP.value = Math.max(0, a);
+}
 
 export function setGrainPixelRatio(pr) {
   GRAIN.value = Math.max(0.5, pr);
@@ -66,20 +71,24 @@ export function keepColorDuring(fn) {
 const GRAIN_CODE = `
     { vec2 gc = floor(gl_FragCoord.xy / uGrainPR);
       float gh = fract(sin(dot(gc, vec2(12.9898, 78.233))) * 43758.5453);
-      gl_FragColor.rgb *= 1.0 + (gh - 0.5) * ${GRAIN_STRENGTH.toFixed(3)}; }`;
+      gl_FragColor.rgb *= 1.0 + (gh - 0.5) * ${GRAIN_STRENGTH.toFixed(3)} * uGrainAmp; }`;
 const SAT_CODE = `
     { float satLum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
       gl_FragColor.rgb = mix(vec3(satLum), gl_FragColor.rgb, uSat); }`;
 
 function grainChunk(shader) {
   shader.uniforms.uGrainPR = GRAIN;
-  shader.fragmentShader = `uniform float uGrainPR;\n${shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>${GRAIN_CODE}`)}`;
+  shader.uniforms.uGrainAmp = GRAIN_AMP;
+  shader.fragmentShader = `uniform float uGrainPR;
+uniform float uGrainAmp;\n${shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>${GRAIN_CODE}`)}`;
 }
 
 function grainSatChunk(shader) {
   shader.uniforms.uGrainPR = GRAIN;
+  shader.uniforms.uGrainAmp = GRAIN_AMP;
   shader.uniforms.uSat = SAT;
-  shader.fragmentShader = `uniform float uGrainPR;\nuniform float uSat;\n${shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>${SAT_CODE}${GRAIN_CODE}`)}`;
+  shader.fragmentShader = `uniform float uGrainPR;
+uniform float uGrainAmp;\nuniform float uSat;\n${shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>${SAT_CODE}${GRAIN_CODE}`)}`;
 }
 
 function addGrain(material) {
@@ -210,6 +219,7 @@ export const DECK = {
 
 function deckChunk(shader) {
   shader.uniforms.uGrainPR = GRAIN;
+  shader.uniforms.uGrainAmp = GRAIN_AMP;
   shader.uniforms.uSat = SAT;
   shader.uniforms.uImp = DECK.uImp;
   shader.uniforms.uJolt = DECK.uJolt;
@@ -227,6 +237,7 @@ ${shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex
     }
     transformed.y += dyDeck;`)}`;
   shader.fragmentShader = `uniform float uGrainPR;
+uniform float uGrainAmp;
 uniform float uSat;
 uniform float uGlow;
 uniform float uPlankU;
