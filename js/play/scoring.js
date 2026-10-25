@@ -24,8 +24,8 @@
 // ends without a Swoop (EVENTS.DASH / EVENTS.DASH_END, which this module listens to).
 //   bankPot({ slam = false, x = 0, z = 0, auto = false }) -> number   the amount added to the score (0 when the pot was empty)
 // HAPPENINGS (step 8):
-//   batHit({ x, z }) -> boolean   the fruit bat touched the player: the combo drops ONE step (min x1, comboStep 0; the timer restarts at 50% if
-//     still above x1, else the combo ends). No life, no pot loss, the shield is not used. Emits COMBO_CHANGE { stepDown } and BAT_HIT { x, z }.
+//   batHit({ x, z }) -> boolean   the fruit bat touched the player: the combo drops ONE step (min x1, comboStep 0) with dropStep's rules: a half window
+//     if still above x1 (or just drained to x1 with a pot), otherwise the combo has ended and a pot banks by itself. No life, no pot loss, the shield is not used. Emits COMBO_CHANGE { stepDown } and BAT_HIT { x, z }.
 //   bigOneSurvived({ x, z }) -> number   the player escaped The Big One's ring: CONFIG.happenings.bigone.bonus (500) goes into the pot, flat (no
 //     multiplier). Emits BIGONE_SURVIVED { x, z, bonus }. (drops.js calls it only when the player was OUTSIDE the ring: a shield-blocked or
 //     invulnerable landing earns nothing.) coconutLanded({ big: true }) uses CONFIG.bigRadius (3.0) as the hit radius.
@@ -162,7 +162,13 @@ export function updateScoring(dt) {
   if (ended) return;
   if (comboLeft > 0) {
     comboLeft -= dt;
-    if (comboLeft <= 0) { comboLeft = 0; inGrace = true; graceLeft = S.comboGrace; }
+    if (comboLeft <= 0) {
+      const over = -comboLeft;                 // the time this update ran past the end of the window counts against the grace
+      comboLeft = 0;
+      inGrace = true;
+      graceLeft = S.comboGrace - over;
+      if (graceLeft <= 0) dropStep();
+    }
   } else if (inGrace) {
     graceLeft -= dt;
     if (graceLeft <= 0) dropStep();
@@ -363,12 +369,16 @@ export function coconutLanded({ x, z, dist, invulnerable, perfect, big }) {
 export function batHit({ x = 0, z = 0 } = {}) {
   if (ended) return false;
   const dropped = state.multiplier > 1;
+  const hadStep = state.comboStep > 0;
   if (dropped) state.multiplier -= 1;
   state.comboStep = 0;
   inGrace = false;
-  comboLeft = state.multiplier > 1 ? S.comboWindow * 0.5 : 0;
+  // the same rules as dropStep: a half window when the combo is still alive (or drained to x1 with a pot to keep); at x1 the combo has ended,
+  // so a pot banks by itself at once
+  comboLeft = state.multiplier > 1 || (dropped && state.pot > 0) ? S.comboWindow * 0.5 : 0;
   state.comboTimerFrac = comboLeft / S.comboWindow;
-  fire(EVENTS.COMBO_CHANGE, { multiplier: state.multiplier, step: 0, stepUp: false, stepDown: dropped });
+  if (!dropped && comboLeft === 0 && state.pot > 0) bankPot({ auto: true });
+  if (dropped || hadStep) fire(EVENTS.COMBO_CHANGE, { multiplier: state.multiplier, step: 0, stepUp: false, stepDown: dropped });
   fire(EVENTS.BAT_HIT, { x, z });
   return dropped;
 }
@@ -426,8 +436,18 @@ export function endRun(reason = 'lives') {
 }
 
 // ---------------------------------------------------------------- self-check (?debug -> window.__mangoTest.scoring())
+// put saved values back WITHOUT replacing the objects that other modules hold on to (state.wind, state.settings, ...)
+function restoreInPlace(target, src) {
+  for (const k of Object.keys(src)) {
+    const v = src[k];
+    if (v && typeof v === 'object' && !Array.isArray(v) && target[k] && typeof target[k] === 'object' && !Array.isArray(target[k])) restoreInPlace(target[k], v);
+    else target[k] = v;
+  }
+}
+
 export function scoringSelfTest() {
   const keep = JSON.parse(JSON.stringify(state));
+  const keepRefs = { wind: state.wind, player: state.player, settings: state.settings };   // object fields must keep their identity (happenings.js holds state.wind)
   const keepInternal = { comboLeft, inGrace, graceLeft, bestPassed, ended };
   const failures = [];
   const check = (name, cond) => { if (!cond) failures.push(name); };
@@ -471,6 +491,19 @@ export function scoringSelfTest() {
     check('the bat restarts the timer at 50%', Math.abs(state.comboTimerFrac - 0.5) < 1e-9);
     batHit({ x: 0, z: 0 }); batHit({ x: 0, z: 0 });
     check('a bat never goes below x1', state.multiplier === 1);
+    // a bat that leaves x1 with a pot: the pot still banks by itself after the window and the grace
+    resetScoring();
+    for (let i = 0; i < 5; i++) mango();
+    check('5 catches: x2 and a pot of 500', state.multiplier === 2 && state.pot === 500);
+    batHit({ x: 0, z: 0 });
+    check('the bat drops to x1 and keeps the pot for a half window', state.multiplier === 1 && state.pot === 500 && state.score === 0);
+    updateScoring(S.comboWindow * 0.5 + S.comboGrace + 0.01);
+    check('then the pot banks by itself (window + grace in one update)', state.pot === 0 && state.score === 500);
+    mango(); mango();
+    batHit({ x: 0, z: 0 });
+    check('a bat at x1 with a pot ends the combo: the pot banks at once', state.pot === 0 && state.score === 700);
+    resetScoring();
+    for (let i = 0; i < 10; i++) mango();
     const pot2 = state.pot;
     check('the Big One bonus goes into the pot', bigOneSurvived({ x: 0, z: 0 }) === CONFIG.happenings.bigone.bonus && state.pot === pot2 + CONFIG.happenings.bigone.bonus);
     check('the big ring is 3 units', land(2.9, { big: true }) === 'hit' || state.lives < 3);
@@ -494,14 +527,14 @@ export function scoringSelfTest() {
     fruitCaught({ type: 'shield', x: 0, y: 0, z: 0 });
     land(0.2);
     check('the shield keeps the pot', state.pot === 100);
-    updateScoring(S.comboWindow + 0.01);
-    updateScoring(S.comboGrace + 0.01);
+    updateScoring(S.comboWindow + S.comboGrace + 0.01);   // the overshoot of the window counts against the grace: one update is enough
     check('a combo that ends banks the pot', state.pot === 0 && state.score === 420);
   } catch (err) {
     failures.push('threw: ' + err.message);
   } finally {
     silent = false;
-    Object.assign(state, keep);
+    restoreInPlace(state, keep);
+    for (const k of Object.keys(keepRefs)) if (state[k] !== keepRefs[k]) failures.push('state.' + k + ' changed identity');
     ({ comboLeft, inGrace, graceLeft, bestPassed, ended } = keepInternal);
   }
   return { ok: failures.length === 0, failures };

@@ -7,7 +7,7 @@
 //   buildTimeline(rng, H = CONFIG.happenings, B = CONFIG.bat) -> timeline
 //        { scripted: [{ id, start, end, warnAt }] in time order (bridge, showers, gusts, bigone),
 //          gusts: [{ start, end, angle }],
-//          showers: [{ start, end, spots: [{ a, r, at }] }]   a, r in 0..1 (the place on the deck), at = seconds after the start (0..length),
+//          showers: [{ start, end, spots: [{ a, r, at }] }]   a, r in 0..1 (the place on the deck), at = seconds after the start (0..length), SORTED by at,
 //          bats: [{ t, angle, offset }]                      t = the moment the bat starts to swoop (its dotted path shows from t - warn) }
 //   activeAt(tl, t) -> the scripted happening running at t, or null
 //   windAt(tl, t, out) -> out { x, z }   the gust's push in deck-local units / second (0 outside a gust; never above H.gustStrength; eases in and out)
@@ -34,6 +34,7 @@ export function buildTimeline(rng, H = CONFIG.happenings, B = CONFIG.bat) {
   const showers = H.showers.map((t) => ({ start: t, end: t + H.showerLength, spots: [] }));
   for (const sh of showers) {
     for (let i = 0; i < H.showerCount; i++) sh.spots.push({ a: rng.next(), r: rng.next(), at: rng.next() * H.showerLength * 0.85 });
+    sh.spots.sort((p, q) => p.at - q.at);    // launched in time order (happenings.js walks them with a counter); sorting draws nothing
   }
   // 3) the bats: all draws first (fixed count), then place them
   const gaps = [];

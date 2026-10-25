@@ -4,7 +4,7 @@
 import { CONFIG } from '../js/core/config.js';
 import { state } from '../js/core/state.js';
 import { EVENTS, on, emit } from '../js/core/events.js';
-import { resetScoring, updateScoring, fruitCaught, coconutLanded, bankPot, endRun } from '../js/play/scoring.js';
+import { resetScoring, updateScoring, fruitCaught, coconutLanded, bankPot, endRun, batHit, scoringSelfTest } from '../js/play/scoring.js';
 
 let passed = 0;
 let failed = 0;
@@ -178,6 +178,35 @@ dashEnd();
 fresh();
 mango();
 check('a plain catch is no Swoop', state.stats.swoops === 0 && count(EVENTS.SWOOP) === 0);
+
+// ---- a bat that leaves x1 with a pot: the pot still banks by itself
+fresh();
+for (let i = 0; i < 5; i++) mango();
+check('x2 and a pot of 500 before the bat', state.multiplier === 2 && state.pot === 500);
+batHit({ x: 0, z: 0 });
+check('a bat leaves x1 and keeps the pot for a half window', state.multiplier === 1 && state.pot === 500 && state.score === 0);
+updateScoring(S.comboWindow * 0.5 + 0.01);
+updateScoring(S.comboGrace + 0.01);
+check('the pot banks after the window and the grace', state.pot === 0 && state.score === 500 && last(EVENTS.POT_BANKED)?.auto === true);
+fresh();
+mango(); mango();
+batHit({ x: 0, z: 0 });
+check('a bat at x1 ends the combo: the pot banks at once', state.pot === 0 && state.score === 200);
+
+// ---- the window's overshoot counts against the grace: one big update is enough
+fresh();
+mango();
+updateScoring(S.comboWindow + S.comboGrace + 0.01);
+check('window + grace in ONE update banks the pot', state.pot === 0 && state.score === 100);
+
+// ---- the self-test restores state in place: state.wind keeps its identity
+const windBefore = state.wind;
+const playerBefore = state.player;
+state.wind.x = 0.7;
+const st = scoringSelfTest();
+check('the scoring self-test passes', st.ok, JSON.stringify(st.failures));
+check('state.wind is the same object after the self-test', state.wind === windBefore && state.player === playerBefore);
+check('and keeps its value', state.wind.x === 0.7);
 
 console.log(`${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

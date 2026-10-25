@@ -99,6 +99,22 @@ check('a coconut after the shower is left alone', holdReady(a, 102, 1, true) ===
 // ---- Lights out
 check('dark only under the bridge, with a 1 s fade', darkAt(80) === 0 && darkAt(86) === 0 && darkAt(86.5) > 0 && darkAt(86.5) < 1 && darkAt(90) === 1 && darkAt(95.5) > 0 && darkAt(95.5) < 1 && darkAt(96) === 0 && darkAt(100) === 0);
 check('upcoming and activeAt', upcoming(a, 0).id === 'bridge' && activeAt(a, 90).id === 'bridge' && activeAt(a, 110) === null && upcoming(a, 100).id === 'gust' && activeAt(a, 123).id === 'gust');
+// ---- the shower's spots launch in time order (happenings.js walks them with a counter)
+let sorted = true;
+for (let seed = 1; seed <= 100; seed++) {
+  const tl = buildTimeline(createRng(seed));
+  for (const sh of tl.showers) for (let i = 1; i < sh.spots.length; i++) if (sh.spots[i].at < sh.spots[i - 1].at) sorted = false;
+}
+check('each shower\'s spots are sorted by time (100 seeds)', sorted);
+{
+  const sh = buildTimeline(createRng(77)).showers[0];
+  const launched = [];
+  let idx = 0;
+  for (let t = 0; t <= H.showerLength; t += 1 / 60) {          // the same walk happenings.js does every frame
+    while (idx < sh.spots.length && t >= sh.spots[idx].at) { launched.push(sh.spots[idx].at); idx++; }
+  }
+  check('the counter walk launches every spot, in time order', launched.length === sh.spots.length && launched.every((v, i) => i === 0 || v >= launched[i - 1]));
+}
 check('about 10 shower mangoes each', a.showers.every((x) => x.spots.length === 10 && x.spots.every((p) => p.at >= 0 && p.at <= H.showerLength)));
 
 console.log(`${passed} passed, ${failed} failed`);

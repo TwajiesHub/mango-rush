@@ -203,6 +203,7 @@ Every type has its own **tell** (ring look + whistle) and its landing spot is **
   player's outline stay readable. Banner "Lights out".
 - **Gust, 120 s and 180 s, 6 s each:** pushes FALLING items only (never the player). Rings slide with the item and still lock at
   least `minLock` before impact; landed items never move.
+  Drifter and late-lock coconuts are not pushed by a gust (owner decision: they already steer their own rings).
 - **Fruit bat, from dusk, every 25-40 s:** straight path across the deck, shown as a dotted line 1 s before. Touching it knocks the
   combo down ONE step (no life, no pot loss) and it snatches any mango on its path (falling or landed). A dash passes through it safely.
 - **The Big One, 210 s:** aimed at where the player is when it spawns (it never follows), 3 s warning, ring radius ~3 units, all other
