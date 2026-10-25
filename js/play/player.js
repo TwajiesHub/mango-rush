@@ -11,6 +11,8 @@
 //   playerAt(secondsAgo, out) -> out   writes { x, z } = where the player stood that many seconds ago (a fixed ring buffer, no
 //        allocation): the late-lock coconut's ring trails the player by this. Clamped to the oldest sample (~4 s).
 //   setOverPose(isBest) -> void   the held game-over pose: a slump, or a cheer after a new best (reset when a run starts)
+//   startTumble() ; updateTumble(realDt) ; endTumble()   the game over tumble (step 9): a hop, a fall backwards and a half roll while the screen is
+//     'dying' (main.js drives it). None with reduced motion. resetPlayer() also clears it.
 //   idlePlayer(realDt, screen) -> void   main.js calls it when no run is being played (start screen: the character turns
 //     slowly; game over: stands idle)
 //
@@ -38,7 +40,7 @@ import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on, emit } from '../core/events.js';
 import { smoothInput, accelerateVelocity } from '../core/motion.js';
-import { playerOutlineMaterial } from '../world/materials.js';
+import { playerOutlineMaterial, keepColorDuring } from '../world/materials.js';
 import { buildCharacter, updateCharacterMotion, animateCharacter, disposeCharacter, triggerReaction, setCharacterPose } from '../world/character.js';
 import { deckBounds, surfaceAt } from '../world/barge.js';
 import { blobShadow } from '../world/materials.js';
@@ -145,7 +147,7 @@ export function initPlayer(s) {
 
 export function setCharacter(info) {
   if (model) { scene.remove(model); disposeCharacter(model); }
-  model = buildCharacter(info.style, info.name);
+  model = keepColorDuring(() => buildCharacter(info.style, info.name));   // the player keeps full colour in Heartbeat
   model.traverse((o) => { if (o.userData.isOutline) o.material = playerOutlineMaterial(); });   // the player's outline can glow cream (Lights out)
   model.position.set(x, 0, z);
   model.rotation.y = facing;
@@ -167,7 +169,8 @@ export function resetPlayer() {
   state.dashReadyFrac = 1;
   camMotion.vx = camMotion.vz = 0;
   camMotion.dashing = false;
-  if (model) { model.visible = true; model.position.set(0, 0, 0); model.rotation.y = 0; model.scale.set(1, 1, 1); setCharacterPose(model, null); }
+  tumbleT = -1;
+  if (model) { model.visible = true; model.position.set(0, 0, 0); model.rotation.set(0, 0, 0); model.scale.set(1, 1, 1); setCharacterPose(model, null); }
   syncView();
 }
 
@@ -350,6 +353,29 @@ export function updatePlayer(dt, input) {
   camMotion.dirZ = dashDirZ;
   syncView();
   pushHistory();
+}
+
+// THE TUMBLE (step 9): the final hit knocks the character over: a short hop, a fall backwards and a half roll (not a ragdoll), over TUMBLE_TIME seconds
+// of the game over transition. main.js calls startTumble() on RUN_END, updateTumble(realDt) while the screen is 'dying' and endTumble() when the game over
+// screen comes up (the character stands again in its slump). Under reduced motion there is no tumble.
+const TUMBLE_TIME = 0.75;
+let tumbleT = -1;
+export function startTumble() {
+  tumbleT = state.settings.reducedMotion ? -1 : 0;
+}
+export function updateTumble(dt) {
+  if (!model || tumbleT < 0) return;
+  tumbleT += dt;
+  const u = Math.min(1, tumbleT / TUMBLE_TIME);
+  const fall = 1 - (1 - u) * (1 - u);
+  model.position.y = Math.sin(Math.PI * Math.min(1, u * 1.7)) * 0.55 * (1 - u * 0.5);
+  model.rotation.x = -1.3 * fall;                                         // over backwards
+  model.rotation.z = Math.sin(u * Math.PI * 2) * 0.5 * (1 - u * 0.4);     // a half roll, rocking
+  model.rotation.y = facing + u * 1.4;
+}
+export function endTumble() {
+  tumbleT = -1;
+  if (model) { model.position.y = 0; model.rotation.x = 0; model.rotation.z = 0; model.rotation.y = facing; }
 }
 
 // the game-over pose, held on the game-over screen: a slump, or a cheer after a new best

@@ -118,7 +118,7 @@ export function think() {
 
 // plays whole runs without rendering; the same order of updates as main.js
 export function simulate(opts = {}) {
-  const { runs = 10, seed = 1, maxSeconds = 180 } = opts;
+  const { runs = 10, seed = 1, maxSeconds = 240 } = opts;
   reaction = opts.reaction ?? 0.35;
   speed = opts.speed ?? 0.9;
   simulating = true;
@@ -137,7 +137,7 @@ export function simulate(opts = {}) {
     resetPlayer();
     resetBank();
     resetDrops(createRng(seed + i));
-    resetHappenings(createRng((seed + i) ^ 0x9e3779b9));   // the same happenings rng main.js uses
+    resetHappenings(createRng((seed + i) ^ 0x9e3779b9), createRng((seed + i) ^ CONFIG.adrenaline.madness.tableSeed));   // the same rngs main.js uses
     while (state.lives > 0 && state.time < maxSeconds) {
       state.time += dt;
       const input = think();
@@ -164,6 +164,9 @@ export function simulate(opts = {}) {
     runs: rows.length, diedBefore: rows.filter((r) => r.died).length,
     meanSurvived: mean('survived'), meanMangoes: mean('mangoes'), meanScore: mean('score'),
     meanBanks: mean('banks'), meanSlams: mean('slams'), meanPotLost: mean('potLostTotal'), meanSwoops: mean('swoops'), meanBestChain: mean('bestChain'),
+    // the share of runs that lived to 120 s (the first gust) and to 207 s (The Big One); a run that reached maxSeconds counts as having reached both
+    reach120: +(rows.filter((r) => r.survived >= 120).length / rows.length).toFixed(2),
+    reach207: +(rows.filter((r) => r.survived >= 207).length / rows.length).toFixed(2),
     hitsPerMinute: +(rows.reduce((s, r) => s + r.hits, 0) / minutes).toFixed(2),
     nearMissesPerMinute: +(rows.reduce((s, r) => s + r.near, 0) / minutes).toFixed(2),
     rows,

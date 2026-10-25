@@ -166,18 +166,64 @@ export function initHud(r, a) {
   });
   on(EVENTS.HEARTBEAT_START, () => document.body.classList.add('is-heartbeat'));
   on(EVENTS.HEARTBEAT_END, () => document.body.classList.remove('is-heartbeat'));
-  on(EVENTS.MADNESS_START, () => document.body.classList.add('is-madness'));
-  on(EVENTS.MADNESS_END, () => document.body.classList.remove('is-madness'));
+  on(EVENTS.MADNESS_START, () => {
+    document.body.classList.add('is-madness');
+    banner(TEXT.popups.madness, 1600, false, true);   // "MANGO MADNESS!" in gold
+  });
+  on(EVENTS.MADNESS_END, () => softEndMadness());
   on(EVENTS.BEST_PASSED, () => {
     el.score.classList.add('is-best');
     el.chip.textContent = TEXT.popups.newBest;
+    el.chip.classList.add('is-ahead');
     el.chip.hidden = false;
     last.ahead = null;   // the chip is showing the badge until the next change
     setTimeout(() => el.score.classList.remove('is-best'), 2000);
   });
-  on(EVENTS.RUN_END, () => document.body.classList.remove('is-heartbeat', 'is-madness'));
+  on(EVENTS.RUN_END, () => document.body.classList.remove('is-heartbeat', 'is-madness', 'is-madness-out'));
   on(EVENTS.POT_BANKED, (e) => flyText(fill(TEXT.hud.inPot, { pot: num(e.amount) }), 'is-bank'));
-  on(EVENTS.POT_LOST, (e) => { if (e.amount > 0) flyText(fill(TEXT.hud.potLost, { pot: num(e.amount) }), 'is-lost'); });
+  on(EVENTS.POT_LOST, (e) => {
+    if (e.amount <= 0) return;
+    flyText(fill(TEXT.hud.potLost, { pot: num(e.amount) }), 'is-lost');
+    shatterPot();
+  });
+}
+
+// the pot chip breaks into SHARDS pieces (pooled spans over the score block; the look is CSS). Looks only; none with reduced motion.
+const SHARDS = CONFIG.feel.potLost.shards;
+let shardEls = null;
+function shatterPot() {
+  if (state.settings.reducedMotion || !el.pot || !el.score) return;
+  const host = el.score.parentNode;
+  if (!shardEls) {
+    shardEls = [];
+    for (let i = 0; i < SHARDS; i++) {
+      const s = document.createElement('i');
+      s.className = 'pot__shard';
+      s.setAttribute('aria-hidden', 'true');
+      s.hidden = true;
+      s.addEventListener('animationend', () => { s.hidden = true; });
+      host.appendChild(s);
+      shardEls.push(s);
+    }
+  }
+  const hb = host.getBoundingClientRect();
+  const cb = el.pot.hidden ? hb : el.pot.getBoundingClientRect();
+  const cx = (cb.left + cb.right) / 2 - hb.left;
+  const cy = (cb.top + cb.bottom) / 2 - hb.top;
+  for (let i = 0; i < SHARDS; i++) {
+    const s = shardEls[i];
+    const a = (i / SHARDS) * Math.PI * 2 + Math.random() * 0.4;
+    const d = 40 + Math.random() * 60;
+    s.style.left = `${cx + (Math.random() - 0.5) * Math.max(20, cb.width * 0.7)}px`;
+    s.style.top = `${cy}px`;
+    s.style.setProperty('--dx', `${(Math.cos(a) * d).toFixed(0)}px`);
+    s.style.setProperty('--dy', `${(Math.sin(a) * d * 0.6 + 26).toFixed(0)}px`);
+    s.style.setProperty('--rot', `${((Math.random() - 0.5) * 540).toFixed(0)}deg`);
+    s.hidden = false;
+    s.style.animation = 'none';
+    void s.offsetWidth;
+    s.style.animation = '';
+  }
 }
 
 // a short-lived piece of text over the pot chip: it flies into the score (banked) or shatters (lost)
@@ -202,10 +248,22 @@ function pulse(node, cls) {
   node.classList.add(cls);
 }
 
-function banner(text, ms, warn) {
+// the gold glow fades over 0.6 s instead of snapping off (a soft end: no message)
+let madOutTimer = 0;
+function softEndMadness() {
+  const b = document.body;
+  if (!b.classList.contains('is-madness')) return;
+  b.classList.remove('is-madness');
+  b.classList.add('is-madness-out');
+  clearTimeout(madOutTimer);
+  madOutTimer = setTimeout(() => b.classList.remove('is-madness-out'), 650);
+}
+
+function banner(text, ms, warn, gold = false) {
   if (!text) return;
   el.banner.textContent = text.toUpperCase();
   el.banner.classList.toggle('is-warn', !!warn);
+  el.banner.classList.toggle('is-gold', !!gold);
   el.banner.classList.remove('is-out');
   el.banner.hidden = false;
   clearTimeout(bannerTimer);
@@ -215,10 +273,11 @@ function banner(text, ms, warn) {
 }
 
 function reset() {
-  document.body.classList.remove('is-heartbeat', 'is-madness');
+  document.body.classList.remove('is-heartbeat', 'is-madness', 'is-madness-out');
   el.hearts.forEach((h) => h.classList.remove('is-lost'));
   el.banner.hidden = true;
   el.flash.classList.remove('is-on');
+  el.chip.classList.remove('is-ahead');
   Object.assign(last, { score: -1, lives: -1, mult: -1, step: -1, timer: -1, madness: -1, ahead: undefined, time: '', phase: '', dash: -1, shield: null, pot: -1 });
   scoreShown = 0;
   scoreT0 = -1;
@@ -303,6 +362,7 @@ export function updateHud() {
     if (s.aheadOfBest === null) el.chip.hidden = true;
     else {
       el.chip.hidden = false;
+      el.chip.classList.toggle('is-ahead', s.aheadOfBest >= 0);   // gold once the best is passed
       el.chip.textContent = s.aheadOfBest >= 0
         ? fill(TEXT.hud.aheadOfBest, { score: num(s.aheadOfBest) })
         : fill(TEXT.hud.behindBest, { score: num(-s.aheadOfBest) });

@@ -21,6 +21,11 @@
 //   toonTextured(map) -> Material (a toon with a colour map, shared) ; tintableClone(material) -> a private copy for tinting
 //   mergeMeshes(root, meshes, material, { uv, alpha, print }) -> Mesh ; bakeToon(root, meshes, opts) -> Mesh ; mergeToonProps(root)
 //
+// HEARTBEAT DRAIN (step 9). setSaturation(v) sets ONE shared uniform (1 = full colour) that every grain shader reads (the colour goes to its own
+//   luminance by 1 - v). keepColorDuring(fn) runs fn so that every material it creates is left out of the drain (the player's character, the hazard
+//   decals); getSaturation() reads it (renderer.js drains the water, which is the clear colour, by hand). The rings, the bank spots and the golden plank
+//   are their own ShaderMaterials. deckTopMaterial(map) + DECK: the living planks (see barge.js). setPlayerOutlineGold(k) tints the player's outline.
+//
 // PAPER GRAIN. A subtle STATIC screen-space grain (about +/-7%, average 1.0, so colours do not shift) is multiplied into every toon, flat
 // and baked material INSIDE its shader (onBeforeCompile: a hash of floor(gl_FragCoord / pixelRatio)). No overlay pass, nothing animates.
 //
@@ -36,20 +41,55 @@ export function setGrainPixelRatio(pr) {
   GRAIN.value = Math.max(0.5, pr);
 }
 
-function grainChunk(shader) {
-  shader.uniforms.uGrainPR = GRAIN;
-  shader.fragmentShader = `uniform float uGrainPR;\n${shader.fragmentShader.replace(
-    '#include <dithering_fragment>',
-    `#include <dithering_fragment>
+// HEARTBEAT (step 9): the last life drains the colour. ONE shared saturation uniform (1 = full colour) read by every grain shader EXCEPT the
+// ones built while keepColor is on (the player's character, the hazard decals): those keep their colour. The rings, the bank spots and the golden
+// plank are their own ShaderMaterials and never see it. No new pass: the grain chunk does the work.
+const SAT = { value: 1 };
+let keepColor = false;
+
+/** 1 = full colour, 0.3 = 70% drained. */
+export function setSaturation(v) {
+  SAT.value = Math.min(1, Math.max(0, v));
+}
+
+export function getSaturation() {
+  return SAT.value;
+}
+
+/** Run fn with every material it creates kept out of the Heartbeat drain (the player's character). */
+export function keepColorDuring(fn) {
+  const was = keepColor;
+  keepColor = true;
+  try { return fn(); } finally { keepColor = was; }
+}
+
+const GRAIN_CODE = `
     { vec2 gc = floor(gl_FragCoord.xy / uGrainPR);
       float gh = fract(sin(dot(gc, vec2(12.9898, 78.233))) * 43758.5453);
-      gl_FragColor.rgb *= 1.0 + (gh - 0.5) * ${GRAIN_STRENGTH.toFixed(3)}; }`,
-  )}`;
+      gl_FragColor.rgb *= 1.0 + (gh - 0.5) * ${GRAIN_STRENGTH.toFixed(3)}; }`;
+const SAT_CODE = `
+    { float satLum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+      gl_FragColor.rgb = mix(vec3(satLum), gl_FragColor.rgb, uSat); }`;
+
+function grainChunk(shader) {
+  shader.uniforms.uGrainPR = GRAIN;
+  shader.fragmentShader = `uniform float uGrainPR;\n${shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>${GRAIN_CODE}`)}`;
+}
+
+function grainSatChunk(shader) {
+  shader.uniforms.uGrainPR = GRAIN;
+  shader.uniforms.uSat = SAT;
+  shader.fragmentShader = `uniform float uGrainPR;\nuniform float uSat;\n${shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>${SAT_CODE}${GRAIN_CODE}`)}`;
 }
 
 function addGrain(material) {
-  material.onBeforeCompile = grainChunk;           // the SAME function everywhere: materials of one kind share one program
-  material.customProgramCacheKey = () => 'grain1';
+  if (keepColor) {
+    material.onBeforeCompile = grainChunk;           // the SAME function everywhere: materials of one kind share one program
+    material.customProgramCacheKey = () => 'grain1';
+  } else {
+    material.onBeforeCompile = grainSatChunk;
+    material.customProgramCacheKey = () => 'grain1sat';
+  }
   return material;
 }
 
@@ -92,7 +132,7 @@ function gradientMap() {
 
 const toonCache = new Map();
 export function toon(color, opts = {}) {
-  const key = `${color}|${opts.flatShading ? 'f' : ''}`;
+  const key = `${color}|${opts.flatShading ? 'f' : ''}|${keepColor ? 'k' : ''}`;
   let m = toonCache.get(key);
   if (!m) {
     m = addGrain(new THREE.MeshToonMaterial({ color, gradientMap: gradientMap() }));
@@ -139,7 +179,7 @@ export function printTexture() {
 
 const vcCache = new Map();
 export function toonVertex({ print = false, flatShading = false } = {}) {
-  const key = `${print}|${flatShading}`;
+  const key = `${print}|${flatShading}|${keepColor ? 'k' : ''}`;
   let m = vcCache.get(key);
   if (!m) {
     m = addGrain(new THREE.MeshToonMaterial({
@@ -153,6 +193,56 @@ export function toonVertex({ print = false, flatShading = false } = {}) {
 
 export function flat(color, opts = {}) {
   return addGrain(new THREE.MeshBasicMaterial({ color, toneMapped: false, ...opts }));
+}
+
+// ---------------------------------------------------------------- the deck's top: living planks (step 9)
+// The planks' paint is ONE unlit plate; here it gets a vertex shader that dips it where a coconut lands (up to DECK_SLOTS dips at a time), jolts
+// the whole deck for The Big One, and a fragment glow along the plank seams at night. Look only: nothing in the game reads the heights.
+//   DECK.uImp.value[i] = (x, z, dy, radius): a dip of dy (negative = down) round (x, z), falling off over radius
+//   DECK.uJolt = a wave over the whole deck (dy)   DECK.uGlow = 0..1 seam glow   DECK.uPlankU = planks across the deck (width / plank width)
+export const DECK_SLOTS = 6;
+export const DECK = {
+  uImp: { value: Array.from({ length: DECK_SLOTS }, () => new THREE.Vector4(0, 0, 0, 1)) },
+  uJolt: { value: 0 },
+  uGlow: { value: 0 },
+  uPlankU: { value: 10 },
+};
+
+function deckChunk(shader) {
+  shader.uniforms.uGrainPR = GRAIN;
+  shader.uniforms.uSat = SAT;
+  shader.uniforms.uImp = DECK.uImp;
+  shader.uniforms.uJolt = DECK.uJolt;
+  shader.uniforms.uGlow = DECK.uGlow;
+  shader.uniforms.uPlankU = DECK.uPlankU;
+  shader.vertexShader = `uniform vec4 uImp[${DECK_SLOTS}];
+uniform float uJolt;
+varying vec2 vDeckUv;
+${shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+    vDeckUv = uv;
+    float dyDeck = uJolt * cos(position.x * 0.45 + position.z * 0.6);
+    for (int i = 0; i < ${DECK_SLOTS}; i++) {
+      float k = max(0.0, 1.0 - distance(position.xz, uImp[i].xy) / uImp[i].w);
+      dyDeck += uImp[i].z * k * k * (3.0 - 2.0 * k);
+    }
+    transformed.y += dyDeck;`)}`;
+  shader.fragmentShader = `uniform float uGrainPR;
+uniform float uSat;
+uniform float uGlow;
+uniform float uPlankU;
+varying vec2 vDeckUv;
+${shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+    { float f = fract(vDeckUv.x * uPlankU);
+      float seam = 1.0 - smoothstep(0.0, 0.05, min(f, 1.0 - f));
+      gl_FragColor.rgb += vec3(1.0, 0.72, 0.34) * seam * uGlow * 0.55; }${SAT_CODE}${GRAIN_CODE}`)}`;
+}
+
+/** The deck's top paint (unlit, textured), with the living-plank shader. One per deck build; the caller owns it. */
+export function deckTopMaterial(map) {
+  const m = new THREE.MeshBasicMaterial({ color: '#ffffff', map, toneMapped: false });
+  m.onBeforeCompile = deckChunk;
+  m.customProgramCacheKey = () => 'deck1';
+  return m;
 }
 
 // ---------------------------------------------------------------- outlines (inverted hull)
@@ -179,9 +269,21 @@ export function playerOutlineMaterial() {
   }
   return playerOutlineMat;
 }
+const OUTLINE_GOLD = new THREE.Color('#FFD84D');
+let outlineCream = 0;
+let outlineGold = 0;
+function paintPlayerOutline() {
+  playerOutlineMaterial().color.copy(OUTLINE_UMBER).lerp(OUTLINE_CREAM, outlineCream).lerp(OUTLINE_GOLD, outlineGold);
+}
 /** 0 = the usual umber outline, 1 = cream (Lights out). */
 export function setPlayerOutlineGlow(k) {
-  playerOutlineMaterial().color.copy(OUTLINE_UMBER).lerp(OUTLINE_CREAM, Math.min(1, Math.max(0, k)));
+  outlineCream = Math.min(1, Math.max(0, k));
+  paintPlayerOutline();
+}
+/** 0..1: the outline turns gold (Mango Madness). */
+export function setPlayerOutlineGold(k) {
+  outlineGold = Math.min(1, Math.max(0, k));
+  paintPlayerOutline();
 }
 
 export function outlineGeometry(geo, thickness = 0.03) {

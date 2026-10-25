@@ -824,6 +824,20 @@ export function updateJourney(dt) {
   // under the bridge a soft cream rim lights the player's edges so you always see yourself and your direction
   rim.intensity = Math.PI * 0.9 * now.rimI * darkF + dark * Math.PI * 1.6;
   rim.color.copy(now.rimC).lerp(CREAM_C, dark);
+  // Mango Madness (step 9): the deck lights lean gold. Set from the base colours every frame it is on, and once more when it goes off.
+  if (goldTint > 0.001 || goldWas) {
+    key.color.copy(now.keyC).lerp(GOLD_LIGHT, goldTint);
+    hemi.color.copy(now.hemiS).lerp(GOLD_LIGHT, goldTint * 0.6);
+    goldWas = goldTint > 0.001;
+  }
+}
+
+const GOLD_LIGHT = new THREE.Color(CONFIG.adrenaline.madness.lightTint);
+let goldTint = 0;
+let goldWas = false;
+/** 0..1: how gold the deck lights are (Mango Madness). adrenaline.js eases it. */
+export function setGoldTint(k) {
+  goldTint = Math.min(1, Math.max(0, k)) * CONFIG.adrenaline.madness.lightTintAmt;
 }
 
 let sunY = 0.05;

@@ -19,6 +19,9 @@
 //   BAT (from 60 s, every 25-40 s): a straight path across the deck, dotted 1 s ahead, then a 0.8 s swoop. Touching it (and not dashing) drops the
 //     combo ONE step (scoring.batHit); it snatches mangoes and golden mangoes on its path (drops.snatchAt). The ambient journey bats are only scenery.
 //   THE BIG ONE (spawns at 207 s, lands at 210 s): drops.spawnBig at where the player stands at 207 s; every other drop is held 206..211 s.
+//   MANGO MADNESS STORM (step 9): while state.madnessActive, about 2 extra mangoes a second by forceDrop from the Madness table (play/madness.js), drawn at
+//     reset from its OWN rng (resetHappenings(rng, madnessRng): seed ^ CONFIG.adrenaline.madness.tableSeed; never the drops or happenings rng). The table is read
+//     from the moment Madness starts and stops when it ends; a spot under a falling coconut's ring is skipped (drops.coconutRingAt). The Daily Run is identical.
 //   SHOWERS (98 s, 152 s, 215 s, 3 s): about 10 mangoes by forceDrop at spots drawn at reset (kept apart by minSeparation); no coconut lands in them.
 
 import * as THREE from 'three';
@@ -26,11 +29,12 @@ import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, emit, on } from '../core/events.js';
 import { buildTimeline, windAt, upcoming, nextBat, activeAt } from './timeline.js';
+import { buildMadnessTable, resolveMadnessSpots } from './madness.js';
 import { getPlayer } from './player.js';
 import { deckBounds } from '../world/barge.js';
-import { forceDrop, spawnBig, snatchAt, setTimeline } from './drops.js';
+import { forceDrop, spawnBig, snatchAt, setTimeline, coconutRingAt } from './drops.js';
 import { batHit } from './scoring.js';
-import { flat } from '../world/materials.js';
+import { flat, keepColorDuring } from '../world/materials.js';
 import { setShowerBranches } from '../world/journey.js';
 
 const H = CONFIG.happenings;
@@ -42,6 +46,11 @@ let parent = null;
 const flags = { warned: [], started: [], ended: [] };
 const showerState = [];            // per shower: { pos: [{x,z}], launched }
 let bigSpawned = false;
+let madTable = null;               // the storm: [{ at, a, r }] seconds after Madness starts
+let madSpots = null;               // the table on this deck: [{ x, z }] (resolved when a Madness starts)
+let madOn = false;
+let madStart = 0;
+let madIdx = 0;
 let batIdx = 0;
 let batWarned = false;
 let bat = null;                    // the bat being shown: { p0x, p0z, dx, dz, L, tell, swoopAt, hit, debug }
@@ -112,7 +121,7 @@ export function initHappenings(p) {
 
   const dg = new THREE.CircleGeometry(1, 6);
   dg.rotateX(-Math.PI / 2);
-  pathDots = new THREE.InstancedMesh(dg, flat('#E4573D'), PATH_N);
+  pathDots = new THREE.InstancedMesh(dg, keepColorDuring(() => flat('#E4573D')), PATH_N);   // a warning: it keeps its colour in Heartbeat
   pathDots.frustumCulled = false;
   pathDots.visible = false;
   parent.add(pathDots);
@@ -152,8 +161,14 @@ function hideAll() {
   setShowerBranches(0);
 }
 
-export function resetHappenings(rng) {
+export function resetHappenings(rng, madnessRng = null) {
   tl = buildTimeline(rng);
+  // the Madness storm table: its OWN rng (seed ^ tableSeed), drawn right here, never from the drops or happenings rng
+  const MA = CONFIG.adrenaline.madness;
+  madTable = madnessRng ? buildMadnessTable(madnessRng, MA.spots, MA.tableSeconds) : null;
+  madSpots = null;
+  madOn = false;
+  madIdx = 0;
   setTimeline(tl);
   flags.warned = tl.scripted.map(() => false);
   flags.started = tl.scripted.map(() => false);
@@ -362,8 +377,38 @@ export function updateHappenings(dt) {
     spawnBig(pl.x, pl.z, H.bigone.warn);
   }
 
+  updateStorm(t);
   updateBat(dt, t);
   updateSplash(dt);
+}
+
+// ---------------------------------------------------------------- the Mango Madness storm
+// While Madness is on (state.madnessActive, however long catches stretch it) extra plain mangoes rain down, about 2 a second, from the Madness table by
+// forceDrop (never the drops schedule). The table is read from the moment Madness starts and the storm stops the moment it ends. Coconuts keep
+// falling as usual. A spot under a coconut's falling ring (or inside The Big One's hold) is skipped, not moved.
+function updateStorm(t) {
+  if (!madTable) return;
+  if (state.madnessActive && !madOn) {
+    madOn = true;
+    madStart = t;
+    madIdx = 0;
+    const b = deckBounds();
+    madSpots = resolveMadnessSpots(madTable, b.halfWidth, b.halfDepth, CONFIG.drops.minSeparation);
+  } else if (!state.madnessActive && madOn) madOn = false;
+  if (!madOn) return;
+  const BO = H.bigone;
+  while (madIdx < madTable.length && t - madStart >= madTable[madIdx].at) {
+    const p = madSpots[madIdx];
+    madIdx++;
+    if (t >= BO.holdFrom && t < BO.holdTo) continue;
+    if (coconutRingAt(p.x, p.z)) continue;
+    forceDrop('mango', p.x, p.z, CONFIG.adrenaline.madness.warn);
+  }
+}
+
+/** For the ?debug panel and tests: how far through the storm table we are. */
+export function getStormDebug() {
+  return { on: madOn, spots: madTable ? madTable.length : 0, launched: madIdx };
 }
 
 on(EVENTS.RUN_END, hideAll);

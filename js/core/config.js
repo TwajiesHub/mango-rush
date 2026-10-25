@@ -239,7 +239,40 @@ export const CONFIG = Object.freeze({
     hit:          { freeze: 100, shake: 0.45, decay: 14, squash: 0.6,  squashMs: 100, particles: 30, color: '#5B3A1F' },
     dash:         { freeze: 0,   shake: 0.04, decay: 20, squash: 1,    squashMs: 0,   particles: 8,  color: '#E6BE7A' },
     stepUp:       { freeze: 15,  shake: 0.08, decay: 14, squash: 1.2,  squashMs: 50,  particles: 0,  color: '#F2A93B' },
-    gameOver:     { freeze: 180, shake: 0.6,  decay: 6,  squash: 1,    squashMs: 0,   particles: 40, color: '#F2A93B', slowMo: { scale: 0.2, seconds: 0.5 } },
+    gameOver:     { freeze: 180, shake: 0.6,  decay: 6,  squash: 1,    squashMs: 0,   particles: 40, color: '#F2A93B', slowMo: { scale: 0.2, seconds: 0.5 }, implode: 28, fadeSeconds: 0.4 },
+    // step 9: every scoring event
+    potBanked:    { freeze: 30,  shake: 0.10, decay: 16, squash: 1.2,  squashMs: 60,  particles: 24, color: '#F2A93B' },   // saffron coins rising from the bank spot
+    slamBank:     { freeze: 60,  shake: 0.18, decay: 14, squash: 1.35, squashMs: 70,  particles: 36, color: '#FFD84D', ring: 20 },
+    swoop:        { freeze: 0,   shake: 0.04, decay: 20, squash: 1,    squashMs: 0,   particles: 10, color: '#F2A93B' },
+    chain:        { freeze: 15,  shake: 0.06, decay: 18, squash: 1,    squashMs: 0,   particles: 12, color: '#FFD84D' },
+    potLost:      { freeze: 0,   shake: 0,    decay: 0,  squash: 1,    squashMs: 0,   particles: 0,  color: '#E4573D', shards: 16 },
+    batHit:       { freeze: 20,  shake: 0.08, decay: 18, squash: 0.85, squashMs: 60,  particles: 8,  color: '#2A1B30' },
+    bigOneSurvived: { freeze: 80, shake: 0.25, decay: 10, squash: 1.3, squashMs: 80,  particles: 40, color: '#FFD84D' },
+    snatched:     { freeze: 0,   shake: 0,    decay: 0,  squash: 1,    squashMs: 0,   particles: 6,  color: '#F2A93B' },
+    // Mango Madness and the best chase
+    madnessStart: { freeze: 60,  shake: 0.12, decay: 14, squash: 1.25, squashMs: 70,  particles: 44, color: '#FFD84D', ring: 28 },
+    madnessCatch: { freeze: 0,   shake: 0,    decay: 0,  squash: 1.15, squashMs: 40,  particles: 20, color: '#FFD84D' },
+    newBest:      { freeze: 40,  shake: 0.1,  decay: 14, squash: 1.3,  squashMs: 70,  particles: 36, color: '#FFD84D' },
+  },
+
+  // step 9: Heartbeat, Mango Madness and the living deck. The Madness storm table is drawn at reset from its own rng (seed ^ tableSeed).
+  adrenaline: {
+    freezeCap: 200,           // ms: the total freeze in any freezeWindow is at most this
+    freezeWindow: 1000,       // ms
+    maxPopups: 4,
+    heartbeat: { sat: 0.3, fade: 0.6, push: 0.04, pushEase: 0.8 },        // colours drain to `sat` (70% drained); the camera eases in 4%
+    madness: {
+      tableSeed: 0x51ed270b, tableSeconds: 20, spots: 40,                 // 2 a second, enough for a Madness stretched by catches
+      warn: 1.2,              // the ring time of a storm mango
+      push: 0.08, pushEase: 0.5, endFade: 0.6,
+      lightTint: '#FFE9A8', lightTintAmt: 0.5, glowColor: '#FFD84D',
+    },
+    planks: {
+      coconut: { amp: 0.07, radius: 2.0 },                                // a landing coconut: planks within ~2 units dip a few cm, 0.3 s
+      big: { jolt: 0.16 },                                                // The Big One: the whole deck jolts
+      step: { amp: 0.012, radius: 0.9, minSpeed: 3 },
+      seam: { bpm: 100, level: 0.34, steady: 0.2 },                       // night seam glow (a placeholder until the music drives it)
+    },
   },
 
   audio: {

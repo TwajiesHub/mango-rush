@@ -29,6 +29,11 @@
 //                                 side runs into the screen (phones). REBUILDS the deck art (disposing the old one) and is
 //                                 ignored while a run is on (play / paused): main.js calls it between runs only.
 //
+// LIVING PLANKS (step 9, look only): the deck's top is a grid (0.5 unit cells) with the materials.deckTopMaterial shader. A landing coconut dips the planks
+//   within about 2 units a few cm and springs back over 0.3 s (The Big One: a bigger dip and a jolt of the whole deck), a footstep at speed dips them a hair,
+//   and from the night phase the plank seams glow faintly in a slow pulse (about 100 bpm). Nothing in the game reads the heights. Reduced motion: no dips,
+//   no jolt, a steady faint glow.
+//
 // The water streaks and the foam are OPAQUE on purpose: three draws opaque things in renderOrder and transparent things
 // after all of them, which would paint them over the deck and the painted sky.
 //
@@ -39,7 +44,8 @@
 import * as THREE from 'three';
 import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
-import { flat, toon, outline, blobShadow, mergeToonProps } from './materials.js';
+import { flat, toon, outline, blobShadow, mergeToonProps, deckTopMaterial, DECK, DECK_SLOTS, keepColorDuring } from './materials.js';
+import { EVENTS, on } from '../core/events.js';
 import { wetFrac, smooth } from '../core/journeymath.js';
 
 const D = CONFIG.deck;
@@ -192,13 +198,21 @@ function buildArt() {
   const hd = d / 2;
 
   // top: a chamfered plate with the planks painted on it
-  const topShape = chamferShape(w, d, D.chamfer);
-  const topGeo = new THREE.ShapeGeometry(topShape);
+  // (a grid of 0.5-unit cells, so the living-planks shader has vertices to move; the corners are pulled onto the chamfer)
+  const topGeo = new THREE.PlaneGeometry(w, d, Math.ceil(w / 0.5), Math.ceil(d / 0.5));
   const pos = topGeo.attributes.position;
   const uv = topGeo.attributes.uv;
-  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / w + 0.5, pos.getY(i) / d + 0.5);
+  const cut = hw + hd - D.chamfer;
+  for (let i = 0; i < pos.count; i++) {
+    let px = pos.getX(i);
+    let py = pos.getY(i);
+    const over = Math.abs(px) + Math.abs(py) - cut;
+    if (over > 0) { px -= Math.sign(px) * over / 2; py -= Math.sign(py) * over / 2; pos.setXY(i, px, py); }
+    uv.setXY(i, px / w + 0.5, py / d + 0.5);
+  }
   topGeo.rotateX(-Math.PI / 2);
-  const top = new THREE.Mesh(topGeo, flat('#ffffff', { map: woodTexture(w, d) }));
+  DECK.uPlankU.value = w / 1.5;                       // the seam glow follows the painted plank width
+  const top = new THREE.Mesh(topGeo, deckTopMaterial(woodTexture(w, d)));
   top.position.y = 0.001;
   art.add(top);
   deckMats.length = 0;
@@ -621,7 +635,8 @@ function makePatchMesh() {
   const geo = new THREE.PlaneGeometry(2, 2);
   geo.rotateX(-Math.PI / 2);
   geo.userData.shared = true;
-  const m = new THREE.Mesh(geo, flat('#ffffff', { map: juiceTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  // (a hazard: it keeps its colour in Heartbeat)
+  const m = new THREE.Mesh(geo, keepColorDuring(() => flat('#ffffff', { map: juiceTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })));
   m.material.userData.shared = true;
   m.visible = false;
   m.position.y = 0.02;
@@ -688,8 +703,68 @@ export function setOrientation(o) {
   buildArt();
 }
 
+// ---------------------------------------------------------------- living planks (step 9; look only, never gameplay)
+// The first IMPACT_SLOTS dips are for landings (the oldest is recycled); the last STEP_SLOTS are for footsteps. A dip is a damped spring
+// (down, a little overshoot, still): amp * e^(-8 age) * cos(16 age), about 0.3 s. The Big One jolts the whole deck the same way.
+// Reduced motion: no dips, no jolt (the seam glow is steady).
+const IMPACT_SLOTS = DECK_SLOTS - 2;
+const imp = [];
+for (let i = 0; i < DECK_SLOTS; i++) imp.push({ age: 9, amp: 0, r: 1 });
+let impNext = 0;
+let stepNext = 0;
+let joltAge = 9;
+let joltAmp = 0;
+let seamLevel = 0;
+
+function dip(slot, x, z, amp, radius) {
+  const s = imp[slot];
+  s.age = 0;
+  s.amp = amp;
+  s.r = radius;
+  DECK.uImp.value[slot].set(x, z, 0, radius);
+}
+
+on(EVENTS.DROP_LAND, (e) => {
+  if (e.type !== 'coconut' || state.settings.reducedMotion) return;
+  const P = CONFIG.adrenaline.planks;
+  dip(impNext, e.x, e.z, -P.coconut.amp * (e.big ? 1.6 : 1), P.coconut.radius * (e.big ? 2.2 : 1));
+  impNext = (impNext + 1) % IMPACT_SLOTS;
+  if (e.big) { joltAge = 0; joltAmp = -P.big.jolt; }
+});
+on(EVENTS.FOOTSTEP, (e) => {
+  const P = CONFIG.adrenaline.planks.step;
+  if (state.settings.reducedMotion || e.speed < P.minSpeed) return;
+  dip(IMPACT_SLOTS + stepNext, e.x, e.z, -P.amp, P.radius);
+  stepNext = (stepNext + 1) % 2;
+});
+on(EVENTS.RUN_START, () => {
+  for (let i = 0; i < DECK_SLOTS; i++) { imp[i].age = 9; DECK.uImp.value[i].z = 0; }
+  joltAge = 9;
+  DECK.uJolt.value = 0;
+});
+
+function updatePlanks(dt) {
+  for (let i = 0; i < DECK_SLOTS; i++) {
+    const s = imp[i];
+    if (s.age > 1) { if (DECK.uImp.value[i].z !== 0) DECK.uImp.value[i].z = 0; continue; }
+    s.age += dt;
+    DECK.uImp.value[i].z = s.amp * Math.exp(-8 * s.age) * Math.cos(16 * s.age);
+  }
+  if (joltAge <= 1.5) {
+    joltAge += dt;
+    DECK.uJolt.value = joltAmp * Math.exp(-4 * joltAge) * Math.cos(14 * joltAge);
+  } else if (DECK.uJolt.value !== 0) DECK.uJolt.value = 0;
+  // night seam glow: from the night phase on, a slow pulse (about 100 beats a minute). Steady and faint under reduced motion.
+  const S = CONFIG.adrenaline.planks.seam;
+  const night = state.screen === 'play' || state.screen === 'paused' || state.screen === 'dying' ? (journeyTime() >= CONFIG.phases.find((p) => p.id === 'night').t ? 1 : 0) : 0;
+  seamLevel += (night - seamLevel) * (1 - Math.exp(-1.5 * dt));
+  const pulse = state.settings.reducedMotion ? S.steady : S.level * (0.55 + 0.45 * Math.sin(t * Math.PI * 2 * S.bpm / 60));
+  DECK.uGlow.value = seamLevel * (state.settings.reducedMotion ? S.steady : pulse);
+}
+
 export function updateBarge(dt) {
   t += dt;
+  updatePlanks(dt);
   const b = D.bob;
   const w = Math.PI * 2 * b.speed;
   bobRoot.position.y = Math.sin(t * w) * b.y;

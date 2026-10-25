@@ -52,6 +52,16 @@
 //   setPlayerObject(object3D) -> void
 //   (step 1 addition) EVENTS.DROP_LAND coconut -> a small camera shake, as in version 0.
 //
+// STEP 9 (adrenaline and feel):
+//   Freezes go through fx/freezebudget.js: they never stack (a longer one replaces a shorter one) and the total in any 1 s window is at most
+//   CONFIG.adrenaline.freezeCap (200 ms). Pop-ups: at most CONFIG.adrenaline.maxPopups (4) on screen, newer ones push older ones up; score pop-ups
+//   show the multiplier ("+300 ×3"); popup(text, at, kind, scale = 1) takes an optional scale (the chain grows with N).
+//   New particle shapes (same one InstancedMesh, no gravity unless said): ringBurst(p, color, count, speed) a flat gold ring; rise(p, color, count)
+//   coins that float up (the banked pot); implode(p, color, count, radius, seconds) dots drawn in (game over).
+//   New feel (CONFIG.feel): potBanked, slamBank, swoop, chain, potLost (the HUD shatters the chip), batHit, bigOneSurvived, snatched, madnessStart
+//   (EVENTS.MADNESS_START: 60 ms freeze, a gold ring round the player), madnessCatch (every catch during Madness: bigger, gold pop-up), newBest
+//   (EVENTS.BEST_PASSED: 40 ms freeze, gold burst). deathSeconds() -> how long the game over transition lasts (0.4 s fade with reduced motion).
+//
 // REDUCED MOTION: if state.settings.reducedMotion, NO shake, NO slow motion, freezes capped at 30 ms;
 // particles and pop-ups still play.
 //
@@ -62,9 +72,11 @@ import { CONFIG } from '../core/config.js';
 import { state } from '../core/state.js';
 import { EVENTS, on } from '../core/events.js';
 import TEXT, { fill } from '../content/text.js';
+import { createFreezeBudget } from './freezebudget.js';
 
 const MAX_PARTICLES = 256;
 const POPUP_POOL = 12;
+const A = CONFIG.adrenaline;
 const GRAVITY = -14;
 
 let scene = null;
@@ -73,7 +85,7 @@ let popupRoot = null;
 let playerObject = null;
 
 // ---- time: freeze + slow motion
-let freezeLeft = 0;      // seconds
+const budget = createFreezeBudget({ windowSec: A.freezeWindow / 1000, capSec: A.freezeCap / 1000 });   // freezes never stack; <= 200 ms per second
 let slowLeft = 0;
 let slowScale = 1;
 let easeBack = 0;        // seconds left of the ease back to normal speed
@@ -96,11 +108,13 @@ const pos = new Float32Array(MAX_PARTICLES * 3);
 const vel = new Float32Array(MAX_PARTICLES * 3);
 const life = new Float32Array(MAX_PARTICLES);      // seconds left (<= 0: free)
 const maxLife = new Float32Array(MAX_PARTICLES);
+const grav = new Float32Array(MAX_PARTICLES);      // how much gravity a particle feels: 1 for a burst, 0 for a ring or an implosion, a little for rising coins
 const dummy = new THREE.Object3D();
 const tint = new THREE.Color();
 
 // ---- popups
-const popups = [];       // { el, x, y, z, t, active }
+const popups = [];       // { el, x, y, z, t, active, scale, seq }   seq = the order they were made in (newer ones push older ones up)
+let popupSeq = 0;
 
 const reduced = () => !!state.settings.reducedMotion;
 
@@ -128,7 +142,7 @@ export function initJuice(opts) {
     el.className = 'popup';
     el.hidden = true;
     popupRoot.appendChild(el);
-    popups.push({ el, x: 0, y: 0, z: 0, t: 0, active: false });
+    popups.push({ el, x: 0, y: 0, z: 0, t: 0, active: false, scale: 1, seq: 0 });
   }
 
   subscribe();
@@ -147,7 +161,7 @@ export function setPlayerObject(obj) {
 // ---------------------------------------------------------------- the pieces
 function freeze(ms) {
   const cap = reduced() ? Math.min(ms, 30) : ms;
-  freezeLeft = Math.max(freezeLeft, cap / 1000);
+  budget.request(cap / 1000);      // a longer freeze replaces a shorter one; never more than 200 ms in any second
 }
 
 function slowMo(s, seconds) {
@@ -183,10 +197,14 @@ function applySquash(q, t) {
   q.obj.scale.set(1 / Math.sqrt(sy), sy, 1 / Math.sqrt(sy));
 }
 
+function spawnCount(count) {
+  return count * particleScale < 1 ? Math.min(count, 1) : Math.round(count * particleScale);
+}
+
 export function burst(p, color, count, speed = 4) {
   if (!mesh) return;
   tint.set(color);
-  count = count * particleScale < 1 ? Math.min(count, 1) : Math.round(count * particleScale);
+  count = spawnCount(count);
   for (let n = 0; n < count; n++) {
     const i = cursor;
     cursor = (cursor + 1) % MAX_PARTICLES;
@@ -199,14 +217,90 @@ export function burst(p, color, count, speed = 4) {
     vel[i * 3 + 1] = 2 + Math.random() * speed;
     vel[i * 3 + 2] = Math.sin(a) * r;
     life[i] = maxLife[i] = 0.5 + Math.random() * 0.4;
+    grav[i] = 1;
     mesh.setColorAt(i, tint);
   }
   mesh.instanceColor.needsUpdate = true;
 }
 
-export function popup(text, p, kind = 'normal') {
-  let slot = popups.find((q) => !q.active);
-  if (!slot) slot = popups.reduce((a, b) => (a.t > b.t ? a : b));   // recycle the oldest
+/** A ring of dots flying out flat from p (no gravity): the gold ring of Mango Madness and the slam. */
+export function ringBurst(p, color, count, speed = 6) {
+  if (!mesh) return;
+  tint.set(color);
+  count = spawnCount(count);
+  for (let n = 0; n < count; n++) {
+    const i = cursor;
+    cursor = (cursor + 1) % MAX_PARTICLES;
+    const a = (n / Math.max(1, count)) * Math.PI * 2;
+    pos[i * 3] = p.x;
+    pos[i * 3 + 1] = p.y;
+    pos[i * 3 + 2] = p.z;
+    vel[i * 3] = Math.cos(a) * speed;
+    vel[i * 3 + 1] = 0;
+    vel[i * 3 + 2] = Math.sin(a) * speed;
+    life[i] = maxLife[i] = 0.45;
+    grav[i] = 0;
+    mesh.setColorAt(i, tint);
+  }
+  mesh.instanceColor.needsUpdate = true;
+}
+
+/** Coins rising from p (a light gravity: they float up, hang, and fall slowly): a banked pot. */
+export function rise(p, color, count) {
+  if (!mesh) return;
+  tint.set(color);
+  count = spawnCount(count);
+  for (let n = 0; n < count; n++) {
+    const i = cursor;
+    cursor = (cursor + 1) % MAX_PARTICLES;
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 0.9;
+    pos[i * 3] = p.x + Math.cos(a) * r * 0.5;
+    pos[i * 3 + 1] = p.y;
+    pos[i * 3 + 2] = p.z + Math.sin(a) * r * 0.5;
+    vel[i * 3] = Math.cos(a) * r * 0.6;
+    vel[i * 3 + 1] = 3.2 + Math.random() * 2.2;
+    vel[i * 3 + 2] = Math.sin(a) * r * 0.6;
+    life[i] = maxLife[i] = 0.7 + Math.random() * 0.3;
+    grav[i] = 0.3;
+    mesh.setColorAt(i, tint);
+  }
+  mesh.instanceColor.needsUpdate = true;
+}
+
+/** Dots that start on a ring of this radius round p and are drawn in to it (no gravity): the game over implosion. */
+export function implode(p, color, count, radius, seconds) {
+  if (!mesh) return;
+  tint.set(color);
+  count = spawnCount(count);
+  for (let n = 0; n < count; n++) {
+    const i = cursor;
+    cursor = (cursor + 1) % MAX_PARTICLES;
+    const a = (n / Math.max(1, count)) * Math.PI * 2 + Math.random() * 0.2;
+    const rr = radius * (0.75 + Math.random() * 0.5);
+    pos[i * 3] = p.x + Math.cos(a) * rr;
+    pos[i * 3 + 1] = p.y + (Math.random() - 0.5) * 0.8;
+    pos[i * 3 + 2] = p.z + Math.sin(a) * rr;
+    vel[i * 3] = -Math.cos(a) * rr / seconds;
+    vel[i * 3 + 1] = 0;
+    vel[i * 3 + 2] = -Math.sin(a) * rr / seconds;
+    life[i] = maxLife[i] = seconds;
+    grav[i] = 0;
+    mesh.setColorAt(i, tint);
+  }
+  mesh.instanceColor.needsUpdate = true;
+}
+
+export function popup(text, p, kind = 'normal', scale = 1) {
+  // at most A.maxPopups on screen: a new one over the limit takes the place of the oldest; newer ones push older ones up (see updateJuice)
+  let live = 0;
+  for (const q of popups) if (q.active) live++;
+  let slot = live >= A.maxPopups ? null : popups.find((q) => !q.active);
+  if (!slot) {
+    for (const q of popups) if (q.active && (!slot || q.t > slot.t)) slot = q;   // recycle the oldest
+  }
+  slot.scale = scale;
+  slot.seq = ++popupSeq;
   slot.active = true;
   slot.t = 0;
   slot.x = p.x;
@@ -230,10 +324,9 @@ const v3 = new THREE.Vector3();
 
 export function updateJuice(realDt) {
   // time scale
-  if (freezeLeft > 0) {
-    freezeLeft -= realDt;
+  if (budget.tick(realDt)) {
     scale = 0;
-    if (freezeLeft <= 0 && slowLeft <= 0) easeBack = 0;
+    if (budget.left <= 0 && slowLeft <= 0) easeBack = 0;
   } else if (slowLeft > 0) {
     slowLeft -= realDt;
     scale = slowScale;
@@ -277,11 +370,11 @@ export function updateJuice(realDt) {
         dummy.scale.setScalar(0);
         dummy.position.set(0, -50, 0);
       } else {
-        vel[j + 1] += GRAVITY * realDt;
+        vel[j + 1] += GRAVITY * grav[i] * realDt;
         pos[j] += vel[j] * realDt;
         pos[j + 1] += vel[j + 1] * realDt;
         pos[j + 2] += vel[j + 2] * realDt;
-        if (pos[j + 1] < 0.05) { pos[j + 1] = 0.05; vel[j] *= 0.5; vel[j + 1] *= -0.3; vel[j + 2] *= 0.5; }
+        if (grav[i] > 0 && pos[j + 1] < 0.05) { pos[j + 1] = 0.05; vel[j] *= 0.5; vel[j + 1] *= -0.3; vel[j + 2] *= 0.5; }
         dummy.position.set(pos[j], pos[j + 1], pos[j + 2]);
         dummy.scale.setScalar(Math.max(0.01, (life[i] / maxLife[i]) * 1.4));
       }
@@ -298,43 +391,71 @@ export function updateJuice(realDt) {
     q.t += realDt;
     if (q.t >= 0.9) { q.active = false; q.el.hidden = true; continue; }
     v3.set(q.x, q.y, q.z).project(camera);
+    let newer = 0;                         // how many younger pop-ups are on screen: each one pushes this one up
+    for (const o of popups) if (o.active && o.seq > q.seq) newer++;
     const px = (v3.x * 0.5 + 0.5) * innerWidth;
-    const py = (-v3.y * 0.5 + 0.5) * innerHeight - (q.t / 0.9) * 60;
-    q.el.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px) translate(-50%, -50%)`;
+    const py = (-v3.y * 0.5 + 0.5) * innerHeight - (q.t / 0.9) * 60 - newer * 42;
+    q.el.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px) translate(-50%, -50%) scale(${q.scale})`;
     q.el.style.opacity = q.t < 0.6 ? '1' : String(1 - (q.t - 0.6) / 0.3);
   }
 }
 
 // ---------------------------------------------------------------- automatic feel
+const at = { x: 0, y: 0, z: 0 };
+function playerSpot(y) {
+  at.x = playerObject ? playerObject.position.x : 0;
+  at.y = y;
+  at.z = playerObject ? playerObject.position.z : 0;
+  return at;
+}
+
 function feel(name, p) {
   const f = CONFIG.feel[name];
   if (f.freeze) freeze(f.freeze);
   if (f.shake) addShake(f.shake, f.decay);
   if (f.squash !== 1 && playerObject) squash(playerObject, f.squash, f.squashMs);
-  if (f.particles && p) burst(p, f.color, f.particles, name === 'golden' ? 5 : 4);
+  if (f.particles && p) {
+    if (name === 'potBanked') rise(p, f.color, f.particles);                      // coins rising from the bank spot
+    else burst(p, f.color, f.particles, name === 'golden' ? 5 : name === 'madnessCatch' ? 5.5 : 4);
+  }
+  if (f.ring && p) ringBurst(p, f.color, f.ring, name === 'madnessStart' ? 7 : 5.5);
   if (f.slowMo) slowMo(f.slowMo.scale, f.slowMo.seconds);
 }
+
+const num = (n) => n.toLocaleString('en-US');
 
 function subscribe() {
   on(EVENTS.CATCH, (e) => {
     if (e.type === 'rotten' || e.type === 'shield') return;
     const golden = e.type === 'golden';
-    feel(golden ? 'golden' : 'catch', e);
-    let text = `+${e.points}`;
-    if (e.multiplier > 1) text += ` x${e.multiplier}`;
-    popup(text, e, golden ? 'gold' : 'normal');
+    const madness = state.madnessActive;
+    feel(golden ? 'golden' : madness ? 'madnessCatch' : 'catch', e);
+    if (golden && madness) burst(e, CONFIG.feel.madnessCatch.color, CONFIG.feel.madnessCatch.particles, 5.5);   // Madness makes every catch bigger and gold
+    let text = `+${num(e.points)}`;
+    if (e.multiplier > 1) text += ` ×${e.multiplier}`;                           // score pop-ups show the multiplier
+    popup(text, e, golden || madness ? 'gold' : 'normal');
     if (e.plank) popup(TEXT.popups.goldenPlank.toUpperCase(), { x: e.x, y: e.y + 1.9, z: e.z }, 'gold');   // a catch made on the golden plank
   });
-  // skills (step 5b): small pop-ups here, the big effects are step 8
+  // skills
   on(EVENTS.SWOOP, (e) => {
+    feel('swoop', { x: e.x, y: 0.5, z: e.z });
     popup(TEXT.popups.swoop.toUpperCase(), { x: e.x, y: 2.2, z: e.z }, 'perfect');
-    if (e.chain >= 2) popup(fill(TEXT.popups.chain, { n: e.chain }).toUpperCase(), { x: e.x, y: 3.0, z: e.z }, 'gold');
+    if (e.chain >= 2) {
+      feel('chain', { x: e.x, y: 0.8, z: e.z });
+      popup(fill(TEXT.popups.chain, { n: e.chain }).toUpperCase(), { x: e.x, y: 3.0, z: e.z }, 'gold', Math.min(1.7, 1 + 0.15 * (e.chain - 2)));   // grows with the chain
+    }
   });
-  on(EVENTS.SLAM_BANK, (e) => popup(TEXT.popups.slamBank.toUpperCase(), { x: e.x, y: 2.4, z: e.z }, 'perfect'));
+  on(EVENTS.SLAM_BANK, (e) => {
+    feel('slamBank', { x: e.x, y: 0.4, z: e.z });
+    popup(TEXT.popups.slamBank.toUpperCase(), { x: e.x, y: 1.7, z: e.z }, 'gold');
+  });
   on(EVENTS.POT_BANKED, (e) => {
-    if (e.auto) return;
-    feel('catch', { x: e.x, y: 0.4, z: e.z });
-    popup(`${TEXT.popups.banked.toUpperCase()} +${e.amount.toLocaleString('en-US')}`, { x: e.x, y: 1.6, z: e.z }, 'gold');
+    if (e.auto) return;                                                           // a pot that banks by itself is quiet
+    if (!e.slam) feel('potBanked', { x: e.x, y: 0.4, z: e.z });                   // a slam has its own, bigger feel
+    popup(`+${num(e.amount)} ${TEXT.popups.banked.toLowerCase()}`, { x: e.x, y: 1.7, z: e.z }, 'big');
+  });
+  on(EVENTS.POT_LOST, (e) => {
+    if (e.amount > 0) popup(fill(TEXT.hud.potLost, { pot: num(e.amount) }).replace('-', '−'), { x: e.x, y: 1.9, z: e.z }, 'bad');   // plain, quick: no guilt
   });
   on(EVENTS.NEAR_MISS, (e) => {
     feel('nearMiss', { x: e.x, y: 0.4, z: e.z });
@@ -345,12 +466,12 @@ function subscribe() {
     popup(TEXT.popups.perfectDodge.toUpperCase(), { x: e.x, y: 1.6, z: e.z }, 'perfect');
   });
   on(EVENTS.HIT, (e) => {
-    const at = { x: e.x, y: 0.4, z: e.z };
+    const p = { x: e.x, y: 0.4, z: e.z };
     if (e.shielded) {
       addShake(0.15, 18);
       popup(TEXT.popups.blocked.toUpperCase(), { x: e.x, y: 2.4, z: e.z }, 'normal');
     } else {
-      feel('hit', at);
+      feel('hit', p);
       popup(TEXT.popups.bonk.toUpperCase(), { x: e.x, y: 2.6, z: e.z }, 'bad');
       if (!reduced() && navigator.vibrate && navigator.userActivation?.hasBeenActive) navigator.vibrate(120);
     }
@@ -358,22 +479,37 @@ function subscribe() {
   on(EVENTS.DASH, (e) => feel('dash', { x: e.x, y: 0.15, z: e.z }));
   on(EVENTS.COMBO_CHANGE, (e) => { if (e.stepUp) feel('stepUp', null); });
   on(EVENTS.DROP_LAND, (e) => { if (e.type === 'coconut') addShake(e.big ? 0.6 : 0.12, e.big ? 8 : 18); });   // The Big One: a strong shake (addShake skips it under reduced motion)
-  // happenings (step 8): small pop-ups, the big effects are step 9
-  on(EVENTS.BAT_HIT, (e) => { feel('nearMiss', { x: e.x, y: 0.4, z: e.z }); popup(TEXT.popups.batKnock.toUpperCase(), { x: e.x, y: 2.2, z: e.z }, 'bad'); });
-  on(EVENTS.ITEM_SNATCHED, (e) => popup(TEXT.popups.snatched.toUpperCase(), { x: e.x, y: 1.6, z: e.z }, 'near'));
-  on(EVENTS.BIGONE_SURVIVED, (e) => popup(TEXT.popups.bigOneSurvived.toUpperCase() + ' +' + e.bonus, { x: e.x, y: 2.6, z: e.z }, 'big'));
+  // happenings
+  on(EVENTS.BAT_HIT, (e) => { feel('batHit', { x: e.x, y: 0.5, z: e.z }); popup(TEXT.popups.batKnock.toUpperCase(), { x: e.x, y: 2.2, z: e.z }, 'bad'); });
+  on(EVENTS.ITEM_SNATCHED, (e) => { feel('snatched', { x: e.x, y: 0.8, z: e.z }); popup(TEXT.popups.snatched.toUpperCase(), { x: e.x, y: 1.6, z: e.z }, 'near', 0.85); });
+  on(EVENTS.BIGONE_SURVIVED, (e) => {
+    feel('bigOneSurvived', playerSpot(0.6));
+    popup(TEXT.popups.bigOneSurvived.toUpperCase() + ' +' + e.bonus, { x: e.x, y: 2.6, z: e.z }, 'big');
+  });
+  // adrenaline: the start of Mango Madness (60 ms freeze, a gold ring round the player; the banner is the HUD's) and the mid-run NEW BEST
+  on(EVENTS.MADNESS_START, () => feel('madnessStart', playerSpot(0.4)));
+  on(EVENTS.BEST_PASSED, () => feel('newBest', playerSpot(1.1)));
   on(EVENTS.RUN_END, () => {
     const f = CONFIG.feel.gameOver;
-    if (f.freeze) freeze(f.freeze);
+    if (f.freeze) freeze(f.freeze);                                               // the final hit: 180 ms, then 0.5 s at 20% speed (not with reduced motion)
     addShake(f.shake, f.decay);
     if (f.slowMo) slowMo(f.slowMo.scale, f.slowMo.seconds);
-    if (playerObject) burst({ x: playerObject.position.x, y: 1, z: playerObject.position.z }, f.color, f.particles, 5);
+    const p = playerSpot(1);
+    burst(p, f.color, f.particles, 5);
+    if (!reduced()) implode(p, f.color, f.implode, 2.6, f.slowMo.seconds + 0.2);  // a ring of dots drawn in round the character
   });
   on(EVENTS.RUN_START, () => {
-    freezeLeft = slowLeft = easeBack = 0;
+    budget.reset();
+    slowLeft = easeBack = 0;
     scale = 1;
     shakeStrength = 0;
     shake.x = shake.y = shake.roll = 0;
     for (const q of popups) { q.active = false; q.el.hidden = true; }
   });
+}
+
+/** Seconds the game over transition lasts before the game over screen: the freeze, 0.5 s at 20% speed and the ease back; 0.4 s with reduced motion (a fade). */
+export function deathSeconds() {
+  const f = CONFIG.feel.gameOver;
+  return reduced() ? f.fadeSeconds : f.freeze / 1000 + f.slowMo.seconds + EASE_BACK + 0.05;
 }

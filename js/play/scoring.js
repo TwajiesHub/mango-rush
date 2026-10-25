@@ -115,6 +115,7 @@ let lastHitLoss = 0;
 
 function fire(name, payload) { if (!silent) emit(name, payload); }
 
+// (step 9) the ?debug keys M, L and K call debugFillMadness(), debugLastLife() and debugBestAbove(gap); main.js marks the run unranked.
 export function resetScoring() {
   state.score = 0;
   state.lives = CONFIG.lives;
@@ -194,6 +195,36 @@ export function updateScoring(dt) {
   } else if (state.madnessFrac > 0) {
     state.madnessFrac = Math.max(0, state.madnessFrac - rate);
   }
+}
+
+// ---- ?debug helpers (main.js: the M, L and K keys; each marks the run "TUNING · NOT RANKED")
+/** M: fill the Madness meter (x5 held; Madness starts on the next update). */
+export function debugFillMadness() {
+  if (ended || state.madnessActive) return false;
+  state.multiplier = S.maxMultiplier;
+  state.comboStep = 0;
+  comboLeft = S.comboWindow;
+  inGrace = false;
+  state.comboTimerFrac = 1;
+  state.madnessFrac = 1;
+  fire(EVENTS.COMBO_CHANGE, { multiplier: state.multiplier, step: 0, stepUp: false, stepDown: false });
+  return true;
+}
+/** L: one life left (Heartbeat). */
+export function debugLastLife() {
+  if (ended || state.lives <= 1) return false;
+  state.lives = 1;
+  fire(EVENTS.LIVES_CHANGE, { lives: 1 });
+  if (!state.heartbeat) { state.heartbeat = true; fire(EVENTS.HEARTBEAT_START, {}); }
+  return true;
+}
+/** K: the best is just above the banked score, so the next bank passes it (the mid-run NEW BEST moment). */
+export function debugBestAbove(gap = 200) {
+  if (ended) return false;
+  state.best = state.score + gap;
+  state.aheadOfBest = -gap;
+  bestPassed = false;
+  return true;
 }
 
 // base x factor x multiplier, then the Madness and last-life bonuses, rounded.

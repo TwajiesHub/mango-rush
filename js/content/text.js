@@ -83,10 +83,10 @@ const TEXT = {
     stepUp: 'x{multiplier}',
     swoop: 'Swoop!',
     chain: 'Chain x{n}',                                     // n >= 2
-    slamBank: 'Slam bank +10%',
+    slamBank: 'Slam +10%',
     goldenPlank: 'Golden plank x2',
     banked: 'Banked',
-    batKnock: 'Bat!',
+    batKnock: 'Knocked',
     snatched: 'Snatched!',
     bigOneSurvived: 'Big One survived',
   },
@@ -94,7 +94,7 @@ const TEXT = {
   hud: {
     score: 'Score',
     combo: 'Combo',
-    aheadOfBest: '+{score} ahead of best',                   // max 26
+    aheadOfBest: '+{score} above your best',                // max 26
     behindBest: '{score} to beat your best',                 // max 26
     dashReady: 'Dash ready',
     dashReadyKey: 'Space · Dash ready',   // on desktop, where Space dashes

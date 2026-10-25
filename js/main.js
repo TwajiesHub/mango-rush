@@ -1,6 +1,8 @@
 // Mango Rush — boot, run states and the game loop.   OWNER: Claude Code  ·  STATUS: skeleton (wiring only)
 //
-// Screens: loading -> start -> (warmup, first run only) -> play <-> paused -> over -> start | play
+// Screens: loading -> start -> (warmup, first run only) -> play <-> paused -> dying -> over -> start | play
+// 'dying' (step 9) is the game over transition: the final hit's freeze, 0.5 s at 20% speed while the character tumbles, a dot implosion (a 0.4 s fade
+// with reduced motion), then the game over screen. The run is already over (scoring has ended it); only looks move.
 // Each frame: realDt -> dt = realDt * timeScale() (freeze / slow motion) -> update modules -> HUD -> render.
 // realDt comes from core/frameclock.js: it paces rendering to an even 60 fps on fast screens with a weak GPU and smooths the step.
 
@@ -15,13 +17,14 @@ import { initRenderer, setCameraMode, setFollowTarget, renderFrame, makePortrait
 import { createFrameClock } from './core/frameclock.js';
 import { buildBarge, updateBarge, deckRoot, deckBounds, setOrientation, juicePatches, wetBandFrac } from './world/barge.js';
 import { buildJourney, resetJourney, updateJourney, getJourneyDebug } from './world/journey.js';
-import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose } from './play/player.js';
+import { initPlayer, setCharacter, resetPlayer, updatePlayer, idlePlayer, getPlayer, setOverPose, startTumble, updateTumble, endTumble } from './play/player.js';
 import { initDrops, resetDrops, updateDrops, clearDrops, getDropLog, getDropDebug, forceDrop } from './play/drops.js';
 import { initBank, resetBank, updateBank, bankSpots } from './play/bank.js';
 import { initPlank, updatePlank, getPlankDebug } from './play/plank.js';
 import { initHappenings, resetHappenings, updateHappenings, getHappeningDebug, startNextHappening, sendBatNow } from './play/happenings.js';
-import { resetScoring, updateScoring, endRun, scoringSelfTest } from './play/scoring.js';
-import { initJuice, timeScale, updateJuice, setPlayerObject } from './fx/juice.js';
+import { resetScoring, updateScoring, endRun, scoringSelfTest, debugFillMadness, debugLastLife, debugBestAbove } from './play/scoring.js';
+import { initJuice, timeScale, updateJuice, setPlayerObject, deathSeconds } from './fx/juice.js';
+import { updateAdrenaline, resetAdrenaline } from './fx/adrenaline.js';
 import { initAudio, unlockAudio, setMusicEnabled, setSfxEnabled, updateAudio } from './audio/audio.js';
 import { initHud, showHud, showTouchControls, updateHud, setPortrait, setJoystick, showBanner } from './ui/hud.js';
 import { initScreens, showLoading, showStart, showWarmupHint, showCountdown, showPause, showGameOver, showLeaderboard, hideScreens } from './ui/screens.js';
@@ -148,12 +151,16 @@ async function startRun(mode) {
   state.time = 0;
   state.phase = 'golden';
   fitDeckToScreen();   // the deck's shape first: the bank spots and the golden plank are laid out on it
+  document.body.classList.remove('is-fading');
+  dyingSummary = null;
+  endTumble();
+  resetAdrenaline();
   resetScoring();
   resetPlayer();
   resetBank();
   resetDrops(rng);   // (also chooses the golden plank's segments)
   hintShown = false;
-  resetHappenings(createRng(seed ^ 0x9e3779b9));
+  resetHappenings(createRng(seed ^ 0x9e3779b9), createRng(seed ^ CONFIG.adrenaline.madness.tableSeed));
   resetJourney();
   fitDeckToScreen();
   hideScreens();
@@ -192,8 +199,25 @@ on(EVENTS.POT_CHANGE, (e) => {
 });
 on(EVENTS.POT_BANKED, () => { if (!botModule?.isSimulating()) setBankDone(); });
 
+// RUN_END only starts the transition; finishRun() (below) shows the game over screen when it is over
+let dyingSummary = null;
+let dyingLeft = 0;
 on(EVENTS.RUN_END, (summary) => {
   if (botModule?.isSimulating()) return;   // the ?debug simulator plays whole runs headlessly
+  dyingSummary = summary;
+  dyingLeft = deathSeconds();
+  setScreen('dying');
+  showTouchControls(false);
+  startTumble();
+  if (state.settings.reducedMotion) document.body.classList.add('is-fading');   // reduced motion: a plain 0.4 s fade instead of slow motion and a tumble
+});
+
+function finishRun() {
+  const summary = dyingSummary;
+  dyingSummary = null;
+  if (!summary) return;
+  endTumble();
+  document.body.classList.remove('is-fading');
   const saved = recordRun({ mode: summary.mode, score: summary.score, mangoes: summary.mangoes });
   summary.isBest = saved.isBest;
   summary.best = saved.best;
@@ -218,7 +242,7 @@ on(EVENTS.RUN_END, (summary) => {
         : { ok: false, error: saved?.error || 'unreachable' });
     });
   }
-});
+}
 
 let lastRank = null;
 async function openLeaderboard() {
@@ -276,11 +300,17 @@ function frame(ts) {
     updateBank(dt);
     updateScoring(dt);
     updateHud();
+  } else if (state.screen === 'dying') {
+    // the game over transition: the clock is the real one; the world moves at the juice time scale (frozen, then 20%)
+    updateTumble(timeScale() > 0 ? realDt : 0);
+    dyingLeft -= realDt;
+    if (dyingLeft <= 0) finishRun();
   } else if (state.screen !== 'paused') { idlePlayer(realDt, state.screen);
   }
   updateJourney(state.screen === 'play' ? dt : realDt * 0.3);
   updateBarge(dt);
   updateJuice(realDt);
+  updateAdrenaline(realDt);
   updateAudio(realDt);
   renderFrame(realDt);
   reportFrame(tick.intervalMs, ts);   // the quality manager (pixel ratio, particles)
@@ -368,6 +398,17 @@ if (location.search.includes('debug')) {
     const k = e.key.toLowerCase();
     if ((k !== 'h' && k !== 'b') || e.repeat || e.ctrlKey || e.metaKey || e.altKey || state.screen !== 'play') return;
     const ok = k === 'h' ? startNextHappening() : sendBatNow();
+    if (!ok) return;
+    markUnranked();
+    runTuned = true;
+    window.__tune?.refresh?.();
+  });
+  // M fills the Mango Madness meter, L leaves one life (Heartbeat), K puts the best just above the score (the NEW BEST moment comes with the next bank).
+  // All three mark the run "TUNING · NOT RANKED", like N, H and B.
+  addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if ((k !== 'm' && k !== 'l' && k !== 'k') || e.repeat || e.ctrlKey || e.metaKey || e.altKey || state.screen !== 'play') return;
+    const ok = k === 'm' ? debugFillMadness() : k === 'l' ? debugLastLife() : debugBestAbove();
     if (!ok) return;
     markUnranked();
     runTuned = true;

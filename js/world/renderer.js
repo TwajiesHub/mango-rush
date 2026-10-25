@@ -41,7 +41,7 @@ import { CONFIG, TUNE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { springStep } from '../core/motion.js';
 import { cameraShake, setParticleScale } from '../fx/juice.js';
-import { setGrainPixelRatio } from './materials.js';
+import { setGrainPixelRatio, getSaturation } from './materials.js';
 import { deckBounds, deckSize } from './barge.js';
 import { syncBackdrop, consumeWaterColor, setJourneyDetail } from './journey.js';
 
@@ -236,6 +236,12 @@ export function warmUp() {
   if (DEBUG) console.log(`[renderer] shader warm-up: ${before} -> ${renderer.info.programs.length} programs`);
 }
 
+let camPush = 0;
+/** 0..0.1: how far the camera has moved in toward the deck, as a share of its distance (adrenaline.js eases it; 0 with reduced motion). */
+export function setCameraPush(v) {
+  camPush = Math.max(0, Math.min(0.12, v));
+}
+
 export function setCameraMode(m) {
   mode = m;
 }
@@ -373,6 +379,11 @@ function aim() {
   target.e9 = 0;
 }
 
+const waterBase = new THREE.Color();
+const waterOut = new THREE.Color();
+let waterKnown = false;
+let clearSat = 1;
+
 export function renderFrame(realDt) {
   const { renderer, scene, camera } = ctx;
   clock += realDt;
@@ -397,7 +408,9 @@ export function renderFrame(realDt) {
   springStep(kickZ, mo ? mo.dirZ * kick : 0, 7, 0.55, realDt);
 
   const shake = cameraShake();
-  camera.position.set(pose.x.x + shake.x + kickX.x, pose.y.x + shake.y, pose.z.x + kickZ.x);
+  // adrenaline push-in (Heartbeat 4%, Mango Madness 8%, eased by fx/adrenaline.js): the camera moves along its view direction
+  const pushD = camPush * (fit ? fit.D : 20);
+  camera.position.set(pose.x.x + shake.x + kickX.x, pose.y.x + shake.y - Math.sin(pose.pitch.x) * pushD, pose.z.x + kickZ.x - Math.cos(pose.pitch.x) * pushD);
   camera.rotation.set(-pose.pitch.x, 0, shake.roll);
   camera.updateMatrixWorld();
 
@@ -406,7 +419,16 @@ export function renderFrame(realDt) {
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 
   const water = consumeWaterColor();   // the water is the clear colour: the journey changes it by phase (step 6)
-  if (water) renderer.setClearColor(water);
+  // Heartbeat drains the water too: it is the clear colour, so it does the same grey mix as the shared saturation uniform by hand
+  const sat = getSaturation();
+  if (water || sat !== clearSat) {
+    if (water) waterBase.copy(water); else if (!waterKnown) renderer.getClearColor(waterBase);
+    waterKnown = true;
+    clearSat = sat;
+    const lum = waterBase.r * 0.299 + waterBase.g * 0.587 + waterBase.b * 0.114;
+    waterOut.setRGB(lum + (waterBase.r - lum) * sat, lum + (waterBase.g - lum) * sat, lum + (waterBase.b - lum) * sat);
+    renderer.setClearColor(waterOut);
+  }
   syncBackdrop(camera, 1 - 2 * C.horizonFrac);
   renderer.render(scene, camera);
 }

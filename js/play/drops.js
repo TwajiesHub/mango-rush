@@ -444,6 +444,16 @@ export function snatchAt(x, z, r) {
   return n;
 }
 
+/** Is a coconut still falling whose ring (plus `margin`) covers (x, z)? The Mango Madness storm keeps its mangoes off these. */
+export function coconutRingAt(x, z, margin = 0.5) {
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.type !== 'coconut' || it.landed) continue;
+    if (Math.hypot(it.x - x, it.z - z) < (it.big ? CONFIG.bigRadius : CONFIG.hitRadius) + margin) return true;
+  }
+  return false;
+}
+
 export function forceDrop(type, x, z, warn, kind = 'normal') {
   if (!scene || !free[type]) return;
   const w = warn ?? (kind === 'normal' ? 1.2 : warnFor(kind, 1.2));
