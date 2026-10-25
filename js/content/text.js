@@ -51,6 +51,8 @@ const TEXT = {
     guestName: 'Guest',
     guestLook: 'Playing as guest',                           // max 24
     scene: 'Golden hour · Lagos lagoon',                     // top right of the scene, desktop
+    backLink: 'start.ng',                                    // the visible link back to https://start.ng (a start.ng game standard): "← start.ng"
+    backLabel: 'Back to start.ng (opens in a new tab)',
     playArrow: 'Play',
     musicToggle: 'Music',
     sfxToggle: 'Sound',
@@ -152,6 +154,7 @@ const TEXT = {
     top: "You're #1 on start.ng",
     signInBoard: 'Sign in to get on the board',              // guests
     keySpace: 'Space',
+    moreOn: 'Play more on',                                  // + a link "start.ng" under the buttons
     newBest: 'New best',
     stats: { mangoes: 'Mangoes', bestCombo: 'Best combo', nearMisses: 'Near misses', survived: 'Survived' },
     lostInPot: 'Lost in the pot: {pot}',                     // only when above 0; plain words, no guilt
@@ -199,6 +202,11 @@ const TEXT = {
     shared: 'Shared',
     failed: "Couldn't make the share card. Try again.",
     cardFooter: 'Play Mango Rush on start.ng',
+    // Share on X (a start.ng game standard): the post text, with the real score and what you reached (xReached, by phase); the link is added by main.js
+    xButton: 'Share on X',
+    xText: 'I scored {score} on Mango Rush 🥭 and {reached}.',
+    xReached: { golden: 'made it past Makoko', dusk: 'survived until nightfall', night: 'rode into the night', midnight: 'reached midnight' },
+    xLabel: 'Share your result on X (opens in a new tab)',
     cardMedal: '{medal} medal',
     plain: 'I scored {score} on Mango Rush 🥭 {url}',
   },

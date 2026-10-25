@@ -13,7 +13,9 @@
 //
 //   initScreens(root: HTMLElement, actions) -> void
 //     actions = { onPlay(), onDaily(), onResume(), onRestart(), onQuit(), onPlayAgain(), onMenu(),
-//                 onShare(), onSettings(settings), onSignIn(), onLeaderboard() }
+//                 onShare(), onShareX(), onSettings(settings), onSignIn(), onLeaderboard() }
+//     START.NG GAME STANDARDS (start.ng checks for these): a visible link back to https://start.ng (the "← start.ng" link on the start screen and "Play more on
+//     start.ng" under the game over buttons), the name "start.ng" shown (the kicker, the links), and a SHARE ON X button on the game over card (onShareX).
 //     Build all screen DOM once inside root; show/hide with classes (no re-creating on every show).
 //
 //   showLoading({ message }) -> void
@@ -83,6 +85,7 @@ const ICON_MUSIC = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6
 const ICON_SFX = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ICON_ARROW = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg>';
 const ICON_SHARE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 12v8h14v-8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/></svg>';
+const ICON_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l16 16M20 4 4 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg>';
 const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="m7 12.5 3.2 3.2L17 8.8" fill="none" stroke="var(--paper)" stroke-width="2.6" stroke-linecap="square"/></svg>';
 const CORNERS = '<i class="corner c1" aria-hidden="true"></i><i class="corner c2" aria-hidden="true"></i><i class="corner c3" aria-hidden="true"></i><i class="corner c4" aria-hidden="true"></i>';
 
@@ -121,6 +124,7 @@ export function initScreens(root, a) {
 
     <section class="screen screen--start" data-screen="start" aria-label="${$esc(TEXT.title)}">
       <p class="scene-tag"><i class="ring-icon" aria-hidden="true"></i>${$esc(TEXT.start.scene)}</p>
+      <a class="back-link" href="https://start.ng" target="_blank" rel="noopener" aria-label="${$esc(TEXT.start.backLabel)}"><span aria-hidden="true">←</span> ${$esc(TEXT.start.backLink)}</a>
       <div class="panel">
         <div class="brand">
           <p class="kicker">${$esc(TEXT.kicker)}</p>
@@ -211,8 +215,10 @@ export function initScreens(root, a) {
         <div class="over__actions">
           <button class="btn btn--primary" type="button" data-act="again"><span>${$esc(TEXT.gameOver.playAgain)}</span><kbd>${$esc(TEXT.gameOver.keySpace)}</kbd></button>
           <button class="btn btn--secondary" type="button" data-act="share">${ICON_SHARE}<span>${$esc(TEXT.gameOver.share)}</span></button>
+          <button class="btn btn--secondary" type="button" data-act="sharex" aria-label="${$esc(TEXT.share.xLabel)}">${ICON_X}<span>${$esc(TEXT.share.xButton)}</span></button>
           <button class="btn btn--text" type="button" data-act="menu">${$esc(TEXT.gameOver.menu)}</button>
         </div>
+        <p class="over__more">${$esc(TEXT.gameOver.moreOn)} <a href="https://start.ng" target="_blank" rel="noopener">start.ng</a></p>
       </div>
     </section>
 
@@ -253,7 +259,7 @@ export function initScreens(root, a) {
 
   const map = {
     play: 'onPlay', daily: 'onDaily', resume: 'onResume', restart: 'onRestart', quit: 'onQuit',
-    again: 'onPlayAgain', share: 'onShare', menu: 'onMenu', signin: 'onSignIn', leaderboard: 'onLeaderboard',
+    again: 'onPlayAgain', share: 'onShare', sharex: 'onShareX', menu: 'onMenu', signin: 'onSignIn', leaderboard: 'onLeaderboard',
     'retry-board': 'onLeaderboard',
   };
   root.addEventListener('click', (e) => {

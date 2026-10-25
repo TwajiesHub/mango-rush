@@ -32,6 +32,9 @@ chat) designed the game with him and steers the build by writing the files in `d
 - **Relative paths only** (`./js/main.js`, `assets/music/loop.mp3`, never `/js/...`).
 - **No secrets, no tracking, no outside network calls** except: three.js from jsDelivr, Google Fonts, and start.ng
   (`https://start.ng/connect` and `https://api.start.ng`) — and those only through `js/startng.js`.
+- **Outside links: only two, both required by start.ng's Game standards.** The Share-on-X link
+  (`https://twitter.com/intent/tweet?text=...&url=...`), opened in a new tab only when the player clicks the game-over
+  "Share on X" button, and the visible back link to `https://start.ng`. No other link may leave the game.
 - **No `eval`, no `new Function`, no obfuscated or encoded code, no password fields, no redirects.** start.ng's
   publish check refuses these.
 - **Never install anything globally or run scripts you downloaded.** If you need a local web server to test, use

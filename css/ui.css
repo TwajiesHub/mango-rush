@@ -56,6 +56,8 @@ svg.wordmark { width: min(300px, 70vw); height: auto; display: block; }
 .brand svg.wordmark { width: min(640px, 64vh, 100vw); }
 .tagline { margin: 0; max-width: 40ch; font-size: clamp(15px, 2.1vh, 19px); line-height: 1.45; }
 .rule { width: 100%; max-width: 484px; height: 0; border: 0; border-top: 2px solid var(--ink); margin: 0; }
+.back-link { position: absolute; right: 36px; bottom: 28px; z-index: 4; display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch-min); padding: 0 16px; border: 2px solid var(--ink); border-radius: 99px; background: var(--paper); color: var(--ink); font: 800 14px var(--font-body); letter-spacing: 0.12em; text-decoration: none; pointer-events: auto; }
+.back-link:hover { background: var(--paper-light); }
 .scene-tag { position: absolute; top: clamp(18px, 6vh, 56px); right: 64px; margin: 0; display: flex; align-items: center; gap: 12px; font: 600 14px var(--font-ceremony); letter-spacing: 0.34em; text-transform: uppercase; color: var(--cream); text-shadow: 0 1px 0 rgba(43, 26, 16, 0.55); pointer-events: none !important; }
 .ring-icon { width: 22px; height: 22px; border-radius: 50%; border: 4px dotted var(--cream); box-sizing: border-box; }
 .who { display: grid; grid-template-columns: auto 1fr; gap: 40px; align-items: start; }
@@ -174,6 +176,9 @@ svg.wordmark { width: min(300px, 70vw); height: auto; display: block; }
 .over__actions .btn--primary { font-size: 19px; padding-right: 18px; }
 .over__actions .btn--primary kbd { color: var(--saffron); }
 .over__actions .btn--text { padding: 8px 16px; font-weight: 800; }
+.over__actions .btn--secondary { padding: 8px 16px; font-size: 14px; }
+.over__more { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); }
+.over__more a { color: inherit; text-underline-offset: 3px; }
 @media (pointer: coarse) { .over__actions kbd { display: none; } }
 
 @media (max-width: 719px) {
@@ -186,9 +191,11 @@ svg.wordmark { width: min(300px, 70vw); height: auto; display: block; }
   .stats dd { font-size: 26px; }
   .stats .long { display: none; }
   .stats .short { display: inline; }
-  .over__actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+  .over__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .back-link { right: var(--gutter); top: calc(14px + env(safe-area-inset-top)); bottom: auto; min-height: 38px; padding: 0 12px; font-size: 12px; background: var(--cream); }
   .over__actions .btn--primary { grid-column: 1 / -1; width: 100%; min-height: 56px; justify-content: center; }
-  .over__actions .btn--secondary { width: 100%; white-space: nowrap; padding: 8px 12px; font-size: 14px; }
+  .over__actions .btn--secondary { width: 100%; white-space: nowrap; padding: 8px 10px; font-size: 13px; letter-spacing: 0.06em; }
+  .over__actions .btn--text { grid-column: 1 / -1; justify-self: center; }
   .stats dt { letter-spacing: 0.1em; font-size: 10.5px; }
   .stats > div { padding-left: 14px; }
   .over__medalname { font-size: 10px; letter-spacing: 0.16em; }

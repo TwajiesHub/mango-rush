@@ -29,7 +29,7 @@ import { initAudio, unlockAudio, setMusicEnabled, setSfxEnabled, updateAudio } f
 import { initHud, showHud, showTouchControls, updateHud, setPortrait, setJoystick, showBanner } from './ui/hud.js';
 import { initScreens, showLoading, showStart, showWarmupHint, showCountdown, showPause, showGameOver, showLeaderboard, hideScreens, showToast } from './ui/screens.js';
 import { createShareCard, shareScore } from './ui/sharecard.js';
-import TEXT from './content/text.js';
+import TEXT, { fill } from './content/text.js';
 
 const $ = (id) => document.getElementById(id);
 let portraitUrl = '';
@@ -70,6 +70,7 @@ async function boot() {
     onPlayAgain: () => startRun(state.mode),
     onMenu: toMenu,
     onShare: share,
+    onShareX: shareOnX,
     onSettings: applySettings,
     onSignIn: () => { location.href = signInUrl(); },
     onLeaderboard: openLeaderboard,
@@ -286,13 +287,24 @@ function applySettings(settings) {
   emit(EVENTS.SETTINGS_CHANGE, state.settings);
 }
 
+// SHARE ON X (a start.ng game standard): opens the X post composer in a new tab with the real score and what you reached, and the game's start.ng page.
+// Only ever on a click of the Share on X button; this and the back link to start.ng are the only links out of the game.
+function shareOnX() {
+  const s = lastSummary;
+  if (!s) return;
+  const reached = TEXT.share.xReached[s.reachedPhase] || TEXT.share.xReached.golden;
+  const text = fill(TEXT.share.xText, { score: s.score.toLocaleString('en-US'), reached });
+  const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent('https://start.ng/games/mango-rush')}`;   // the game's start.ng page: it shows the cover as the preview
+  window.open(url, '_blank', 'noopener');
+}
+
 // SHARE CARD never fails silently: every outcome gets a short message
 async function share() {
   if (!lastSummary || sharing) return;
   sharing = true;
   try {
     const blob = await createShareCard({ summary: lastSummary, player: state.player, portraitUrl: renderedPortrait, faceUrl: state.player.face, dailyLabel: dailyLabel(), rank: lastRank });
-    const r = await shareScore({ summary: lastSummary, blob, url: 'https://mango-rush.start.ng', dailyLabel: dailyLabel() });
+    const r = await shareScore({ summary: lastSummary, blob, url: 'https://start.ng/games/mango-rush', dailyLabel: dailyLabel() });
     const say = { shared: TEXT.share.shared, downloaded: TEXT.share.saved, saved: TEXT.share.savedOnly, copied: TEXT.share.copied, failed: TEXT.share.failed };
     if (r !== 'cancelled') showToast(say[r] || TEXT.share.failed);
   } catch (err) {
