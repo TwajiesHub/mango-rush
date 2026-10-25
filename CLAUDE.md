@@ -37,6 +37,8 @@ chat) designed the game with him and steers the build by writing the files in `d
 - **Never install anything globally or run scripts you downloaded.** If you need a local web server to test, use
   `python -m http.server 8000` (on Windows `py -m http.server 8000`; or `npx --yes serve` only if the owner agrees).
 - The owner works on **Windows** (PowerShell). Give commands that work there.
+- **Commit messages: no `Co-Authored-By` or "Generated with" lines** (the owner's rule). If your tool adds them by default,
+  turn that off before committing.
 - Keep the game playable at the end of every step. Commit on `v1` at the end of the step with a clear message
   (`step 02: barge and camera`).
 - Respect the contracts in each module's header (exports, signatures, events, state ownership). If a contract is

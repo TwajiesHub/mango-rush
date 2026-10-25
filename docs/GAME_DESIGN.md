@@ -198,6 +198,20 @@ Every type has its own **tell** (ring look + whistle) and its landing spot is **
 - **Introduction:** each type's first appearance in a run comes alone (no other coconut within 2 s).
 - Later (v1.1): Fake-out (ring pauses at 70%), Bouncer (lands, bounces once to a second ring).
 
+## Decisions for the happenings (25 Oct): these override the Happenings list above where they disagree
+- **Lights out (under the bridge), 86 s for 10 s:** the deck goes dark under the bridge; only warning rings, bank spots and the
+  player's outline stay readable. Banner "Lights out".
+- **Gust, 120 s and 180 s, 6 s each:** pushes FALLING items only (never the player). Rings slide with the item and still lock at
+  least `minLock` before impact; landed items never move.
+- **Fruit bat, from dusk, every 25-40 s:** straight path across the deck, shown as a dotted line 1 s before. Touching it knocks the
+  combo down ONE step (no life, no pot loss) and it snatches any mango on its path (falling or landed). A dash passes through it safely.
+- **The Big One, 210 s:** aimed at where the player is when it spawns (it never follows), 3 s warning, ring radius ~3 units, all other
+  drops paused around it. Hit = the normal coconut hit (life + pot), blocked by the calabash shield. Surviving: +500 into the pot and
+  "Big One survived".
+- **Mango showers, ~98 s, ~152 s, ~215 s:** 3 s of only mangoes (about 10) with no coconut landing. A reward after a scary moment.
+- **Coconut volleys** are already live (since step 5a); no banner.
+- Every happening is on the run clock and its own rng (drawn at reset), so the Daily Run stays identical.
+
 ## Not doing (v1)
 Live multiplayer, revives/continues, cosmetics that change the start.ng look, extra hidden bonuses.
 **Version 1.1:** per-run missions, monkey raid event, extra skills (Thread the needle, Golden swoop, Dive, Coconut kick),
