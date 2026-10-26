@@ -19,7 +19,7 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
 | 10 | The screens | start, HUD (pot chip), pause, game over (record near miss, lost pot, skills line, rival), leaderboard, share card — matched to the mockups; 10b start.ng standards (share on X, back link) | done |
 | 11 | Sound | afrobeat loop (adaptive) + all sound effects | done |
 | 12 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | done |
-| 13 | Release | security scan, SCORE_VERSION 3, docs updated; owner fast-forwards `main` to `v1` → mango-rush.start.ng becomes version 1; tag `v1.0` | **CURRENT** |
+| 13 | Release | security scan, SCORE_VERSION 3, docs updated; owner fast-forwards `main` to `v1` → mango-rush.start.ng becomes version 1; tag `v1.0` | done |
 
 ## Step 0 — owner setup (no Claude Code needed)
 1. Clone the live repo and make the work branch:
