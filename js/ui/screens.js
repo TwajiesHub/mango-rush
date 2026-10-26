@@ -492,7 +492,7 @@ function countUp(o, target, token) {
   const reduced = state.settings.reducedMotion;
   const step = (now) => {
     if (token !== overToken) return;
-    const u = reduced ? 1 : Math.min(1, (now - t0) / 800);
+    const u = reduced ? 1 : Math.max(0, Math.min(1, (now - t0) / 800));   // rAF's timestamp can precede t0 on the first frame
     const e = 1 - Math.pow(1 - u, 3);
     el.textContent = num(Math.round(target * e));
     if (u < 1) countTimer = requestAnimationFrame(step);

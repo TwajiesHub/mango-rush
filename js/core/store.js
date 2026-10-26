@@ -31,6 +31,8 @@
 //   rules is not comparable any more. progress carries { scoreVersion }; when the saved data has an older (or no) version, initStore()
 //   resets best and dailyBest to 0, ONCE, and saves the new version. Everything else (mangoes, runs, warm-up) is kept. The start.ng
 //   leaderboard is server-side and is never touched. Raise SCORE_VERSION whenever the rules change again.
+//   Versions: 2 (step 6): the pot and the new scoring rules.
+//             3 (step 13): v1's rules (happenings, Madness storm, Big One bonus, new medals).
 //
 // RULES:
 //   - Wrap EVERY localStorage read/write in try/catch. Storage can be blocked (private mode).
@@ -38,7 +40,7 @@
 //   - Store JSON. Ignore corrupt values (fall back to defaults).
 //   - No imports.
 
-export const SCORE_VERSION = 2;
+export const SCORE_VERSION = 3;
 const DEFAULTS = { best: 0, dailyBest: 0, dailyDate: null, totalMangoes: 0, runs: 0, warmupDone: false, scoreVersion: SCORE_VERSION };
 let userId = 'guest';
 let memory = { ...DEFAULTS };

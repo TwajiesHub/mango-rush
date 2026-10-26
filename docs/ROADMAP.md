@@ -18,8 +18,8 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
 | 9 | Adrenaline + feel | heartbeat, Madness, best chase, bank/skill effects, living planks, freezes, shake, squash, particles, pop-ups; 9b storm cap | done |
 | 10 | The screens | start, HUD (pot chip), pause, game over (record near miss, lost pot, skills line, rival), leaderboard, share card — matched to the mockups; 10b start.ng standards (share on X, back link) | done |
 | 11 | Sound | afrobeat loop (adaptive) + all sound effects | done |
-| 12 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | **CURRENT** |
-| 13 | Release | merge `v1` into `main` (without `docs/`, `tests/`) → mango-rush.start.ng becomes version 1 | — |
+| 12 | Polish | warm-up tutorial, accessibility, phone performance, new cover.png, start.ng check clean | done |
+| 13 | Release | security scan, SCORE_VERSION 3, docs updated; owner fast-forwards `main` to `v1` → mango-rush.start.ng becomes version 1; tag `v1.0` | **CURRENT** |
 
 ## Step 0 — owner setup (no Claude Code needed)
 1. Clone the live repo and make the work branch:
@@ -52,3 +52,9 @@ the beta), reports to the planner, and the planner writes the next brief in `doc
    If the beta still shows the old version a few minutes after a push, run the same publish block again: it updates
    immediately (reply `created : False`). Then reload with `?v=N` (any new number) to skip the browser's saved copy.
 3. Play it on laptop and phone; send the planner Claude Code's report + screenshots + anything that felt off.
+
+## After version 1
+Version 1 went live in step 13 (`main` fast-forwarded to `v1`). Future changes follow the same beta-first flow: work on a
+branch, push it to the beta (`git push beta <branch>:main`), run `POST https://api.start.ng/games/check` on the beta repo
+(zero errors and zero warnings), play it on laptop and phone, and only then let the owner fast-forward `main`.
+Raise `SCORE_VERSION` in `js/core/store.js` whenever the scoring rules change.

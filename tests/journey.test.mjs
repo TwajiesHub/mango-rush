@@ -69,7 +69,7 @@ store.initStore('u1');
 let p = store.loadProgress();
 check('an old best (no version) resets to 0', p.best === 0 && p.dailyBest === 0);
 check('other progress is kept', p.totalMangoes === 321 && p.runs === 9 && p.warmupDone === true);
-check('the new version is saved', JSON.parse(mem[key]).scoreVersion === store.SCORE_VERSION && store.SCORE_VERSION === 2);
+check('the new version is saved', JSON.parse(mem[key]).scoreVersion === store.SCORE_VERSION && store.SCORE_VERSION === 3);
 store.recordRun({ mode: 'free', score: 1200, mangoes: 3 });
 store.initStore('u1');
 p = store.loadProgress();
@@ -78,7 +78,7 @@ mem[key] = JSON.stringify({ scoreVersion: 1, best: 777, dailyBest: 0, dailyDate:
 store.initStore('u1');
 check('an older version also resets', store.loadProgress().best === 0);
 store.initStore('fresh');
-check('a brand new player starts at 0 with the version set', store.loadProgress().best === 0 && JSON.parse(mem['mango-rush:fresh:progress'] || '{"scoreVersion":2}').scoreVersion === 2);
+check('a brand new player starts at 0 with the version set', store.loadProgress().best === 0 && JSON.parse(mem['mango-rush:fresh:progress'] || '{"scoreVersion":3}').scoreVersion === 3);
 
 console.log(`${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

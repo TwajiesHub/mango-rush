@@ -1,8 +1,13 @@
 # Mango Rush
 
+**Version 1 · October 2026** · play it at https://mango-rush.start.ng
+
 A three.js arcade game for [start.ng](https://start.ng). Ride the mango barge down the Lagos lagoon, catch the mangoes,
 dodge the coconuts and last until midnight. You play as your own start.ng character. Static files only: plain ES
 modules, no build step (three.js r160 comes from jsDelivr).
+
+Version 1 starts everyone's local best at 0 (the scoring rules changed); your settings and your place on the start.ng
+leaderboard are kept.
 
 ## Playing
 

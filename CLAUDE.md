@@ -14,9 +14,10 @@ chat) designed the game with him and steers the build by writing the files in `d
    `docs/mockups/` (approved screen mockups, if the owner has added the images).
 
 ## Where things are
-- `main` branch = the LIVE game at https://mango-rush.start.ng (version 0, a simpler island game).
+- `main` branch = **version 1, live** at https://mango-rush.start.ng (released in step 13, October 2026).
   start.ng redeploys automatically on every push to `main`.
-- `v1` branch = where you work. **Never commit to or push `main`.** Never merge into `main` unless a step brief says so.
+- Future work goes on a branch (`v1` is still the working branch), is tested on the beta first, and reaches `main` only
+  when a step brief says so. **Never commit to or push `main`.** Never merge into `main` unless a step brief says so.
 - The code at the repo root is the source of truth; each module's contract is its header comment.
   `docs/skeleton/` is the original plan from before step 1 (history only; don't edit it or copy from it).
 - `tests/` = Node test files for pure-logic modules (plain `node`, no packages). Run `node tests/motion.test.mjs`
